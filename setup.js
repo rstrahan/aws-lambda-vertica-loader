@@ -8,6 +8,14 @@
     or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, express or implied. See the License for the specific language governing permissions and limitations under the License. 
  */
 
+
+/* 
+ * May 2015
+ * Derivative created by HP, to leverage and extend the function framework to provide automatic loading from S3, via Lambda, to the HP Vertica Analytic Database platform.
+ */
+
+
+
 /**
  * Ask questions of the end user via STDIN and then setup the dynamo DB table
  * entry for the configuration when done
@@ -115,8 +123,8 @@ q_filenameFilter = function(callback) {
 };
 
 q_clusterEndpoint = function(callback) {
-	rl.question('Enter the Cluster Endpoint > ', function(answer) {
-		common.validateNotNull(answer, 'You Must Provide a Cluster Endpoint',
+	rl.question('Enter the Vertica Cluster Endpoint (Public IP or DNS name)> ', function(answer) {
+		common.validateNotNull(answer, 'You Must Provide a Vertica Cluster Endpoint',
 				rl);
 		dynamoConfig.Item.loadClusters.L[0].M.clusterEndpoint = {
 			S : answer
@@ -126,7 +134,7 @@ q_clusterEndpoint = function(callback) {
 };
 
 q_clusterPort = function(callback) {
-	rl.question('Enter the Cluster Port > ', function(answer) {
+	rl.question('Enter the Vertica Cluster Port > ', function(answer) {
 		dynamoConfig.Item.loadClusters.L[0].M.clusterPort = {
 			N : '' + common.getIntValue(answer, rl)
 		};
@@ -134,19 +142,8 @@ q_clusterPort = function(callback) {
 	});
 };
 
-q_clusterDB = function(callback) {
-	rl.question('Enter the Database Name > ', function(answer) {
-		if (common.blank(answer) !== null) {
-			dynamoConfig.Item.loadClusters.L[0].M.clusterDB = {
-				S : answer
-			};
-		}
-		callback(null);
-	});
-};
-
 q_userName = function(callback) {
-	rl.question('Enter the Database Username > ', function(answer) {
+	rl.question('Enter the Vertica Database Username > ', function(answer) {
 		common.validateNotNull(answer, 'You Must Provide a Username', rl);
 		dynamoConfig.Item.loadClusters.L[0].M.connectUser = {
 			S : answer
@@ -156,7 +153,7 @@ q_userName = function(callback) {
 };
 
 q_userPwd = function(callback) {
-	rl.question('Enter the Database Password > ', function(answer) {
+	rl.question('Enter the Vertica Database Password > ', function(answer) {
 		common.validateNotNull(answer, 'You Must Provide a Password', rl);
 
 		kmsCrypto.encrypt(answer, function(err, ciphertext) {
@@ -188,54 +185,10 @@ q_truncateTable = function(callback) {
 			});
 };
 
-q_df = function(callback) {
-	rl.question('Enter the Data Format (CSV or JSON) > ', function(answer) {
-		common.validateArrayContains([ 'CSV', 'JSON' ], answer.toUpperCase(),
-				rl);
-		dynamoConfig.Item.dataFormat = {
-			S : answer.toUpperCase()
-		};
-		callback(null);
-	});
-};
-
-q_csvDelimiter = function(callback) {
-	if (dynamoConfig.Item.dataFormat.S === 'CSV') {
-		rl.question('Enter the CSV Delimiter > ', function(answer) {
-			common.validateNotNull(answer,
-					'You Must the Delimiter for CSV Input', rl);
-			dynamoConfig.Item.csvDelimiter = {
-				S : answer
-			};
-			callback(null);
-		});
-	} else {
-		callback(null);
-	}
-};
-
-q_jsonPaths = function(callback) {
-	if (dynamoConfig.Item.dataFormat.S === 'JSON') {
-		rl
-				.question(
-						'Enter the JSON Paths File Location on S3 (or NULL for Auto) > ',
-						function(answer) {
-							if (common.blank(answer) !== null) {
-								dynamoConfig.Item.jsonPath = {
-									S : answer
-								};
-							}
-							callback(null);
-						});
-	} else {
-		callback(null);
-	}
-};
-
 q_manifestBucket = function(callback) {
 	rl
 			.question(
-					'Enter the S3 Bucket for Redshift COPY Manifests > ',
+					'Enter the S3 Bucket for COPY Manifests > ',
 					function(answer) {
 						common
 								.validateNotNull(
@@ -250,7 +203,7 @@ q_manifestBucket = function(callback) {
 };
 
 q_manifestPrefix = function(callback) {
-	rl.question('Enter the Prefix for Redshift COPY Manifests > ', function(
+	rl.question('Enter the Prefix for COPY Manifests > ', function(
 			answer) {
 		common.validateNotNull(answer,
 				'You Must Provide a Prefix for Manifests', rl);
@@ -270,33 +223,6 @@ q_failedManifestPrefix = function(callback) {
 					S : answer
 				};
 				callback(null);
-			});
-};
-
-q_accessKey = function(callback) {
-	rl.question('Enter the Access Key used by Redshift to get data from S3 > ',
-			function(answer) {
-				common.validateNotNull(answer,
-						'You Must Provide an Access Key', rl);
-				dynamoConfig.Item.accessKeyForS3 = {
-					S : answer
-				};
-				callback(null);
-			});
-};
-
-q_secretKey = function(callback) {
-	rl.question('Enter the Secret Key used by Redshift to get data from S3 > ',
-			function(answer) {
-				common.validateNotNull(answer, 'You Must Provide a Secret Key',
-						rl);
-
-				kmsCrypto.encrypt(answer, function(err, ciphertext) {
-					dynamoConfig.Item.secretKeyForS3 = {
-						S : kmsCrypto.toLambdaStringFormat(ciphertext)
-					};
-					callback(null);
-				});
 			});
 };
 
@@ -351,7 +277,7 @@ q_batchTimeoutSecs = function(callback) {
 };
 
 q_copyOptions = function(callback) {
-	rl.question('Additional Copy Options to be added > ', function(answer) {
+	rl.question('Copy Options - COPY table FROM files [options] > ', function(answer) {
 		if (common.blank(answer) !== null) {
 			dynamoConfig.Item.copyOptions = {
 				S : answer
@@ -388,19 +314,13 @@ qs.push(q_s3Prefix);
 qs.push(q_filenameFilter);
 qs.push(q_clusterEndpoint);
 qs.push(q_clusterPort);
-qs.push(q_clusterDB);
 qs.push(q_table);
 qs.push(q_truncateTable);
 qs.push(q_userName);
 qs.push(q_userPwd);
-qs.push(q_df);
-qs.push(q_csvDelimiter);
-qs.push(q_jsonPaths);
 qs.push(q_manifestBucket);
 qs.push(q_manifestPrefix);
 qs.push(q_failedManifestPrefix);
-qs.push(q_accessKey);
-qs.push(q_secretKey);
 qs.push(q_successTopic);
 qs.push(q_failureTopic);
 qs.push(q_batchSize);

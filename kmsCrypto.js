@@ -13,12 +13,12 @@ var async = require('async');
 var kms = undefined;
 
 var authContext = {
-	module : "AWSLambdaRedshiftLoader",
+	module : "AWSLambdaVerticaLoader",
 	region : null
 };
 
 // module key alias to be used for this application
-var moduleKeyName = "alias/LambaRedshiftLoaderKey";
+var moduleKeyName = "alias/LambaVerticaLoaderKey";
 
 var setRegion = function(region) {
 	if (!region) {
@@ -60,7 +60,7 @@ var getOrCreateMasterKey = function(callback) {
 				// master key for the module doesn't exist, so
 				// create it
 				var createKeyParams = {
-					Description : "Lambda Redshift Loader Master Encryption Key",
+					Description : "Lambda Vertica Loader Master Encryption Key",
 					KeyUsage : 'ENCRYPT_DECRYPT'
 				};
 

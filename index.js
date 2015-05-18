@@ -7,12 +7,19 @@
 
     or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, express or implied. See the License for the specific language governing permissions and limitations under the License. 
  */
+
+/*
+ * May 2015
+ * Derivative created by HP, to leverage and extend the function framework to provide automatic loading from S3, via Lambda, to the HP Vertica Analytic Database platform.
+ */
+
+
 var pjson = require('./package.json');
 var region = process.env['AWS_REGION'];
 
 if (!region || region === null || region === "") {
 	region = "us-east-1";
-	console.log("AWS Lambda Redshift Database Loader using default region " + region);
+	console.log("AWS Lambda Vertica Database Loader using default region " + region);
 }
 
 var aws = require('aws-sdk');
@@ -37,7 +44,7 @@ kmsCrypto.setRegion(region);
 var common = require('./common');
 var async = require('async');
 var uuid = require('node-uuid');
-var pg = require('pg');
+var vertica = require('vertica');
 var upgrade = require('./upgrades');
 
 // main function for AWS Lambda
@@ -64,7 +71,7 @@ exports.handler =
 					function(s3Info, err, data) {
 						if (err) {
 							console.log(err);
-							var msg = 'Error getting Redshift Configuration for ' + s3Info.prefix + ' from Dynamo DB ';
+							var msg = 'Error getting Vertica Configuration for ' + s3Info.prefix + ' from Dynamo DB ';
 							console.log(msg);
 							context.done(error, msg);
 						}
@@ -72,12 +79,12 @@ exports.handler =
 						if (!data || !data.Item) {
 							// finish with no exception - where this file sits
 							// in the S3
-							// structure is not configured for redshift loads
+							// structure is not configured for loads
 							console.log("No Configuration Found for " + s3Info.prefix);
 
 							context.done(null, null);
 						} else {
-							console.log("Found Redshift Load Configuration for " + s3Info.prefix);
+							console.log("Found Vertica Load Configuration for " + s3Info.prefix);
 
 							var config = data.Item;
 							var thisBatchId = config.currentBatch.S;
@@ -307,7 +314,7 @@ exports.handler =
 																		+ "' state. If so, unlock the back using `node unlockBatch.js <batch ID>`, delete the processed file marker with `node processedFiles.js -d <filename>`, and then re-store the file in S3";
 														console.log(e);
 														exports.sendSNS(config.failureTopicARN.S,
-																"Lambda Redshift Loader unable to write to Open Pending Batch", e, function() {
+																"Lambda Vertica Loader unable to write to Open Pending Batch", e, function() {
 																	context.done(error, e);
 																}, function(err) {
 																	console.log(err);
@@ -357,7 +364,7 @@ exports.handler =
 			};
 
 			/**
-			 * Function which links the manifest name used to load redshift onto the
+			 * Function which links the manifest name onto the
 			 * batch table entry
 			 */
 			exports.addManifestToBatch = function(config, thisBatchId, s3Info, manifestInfo) {
@@ -575,17 +582,29 @@ exports.handler =
 						var manifestContents = {
 							entries : []
 						};
+						// create list of file paths for Vertica COPY
+						var copyPathList = "";
 
 						for (var i = 0; i < batchEntries.length; i++) {
+							// copyPath used for Vertica loads - S3 bucket must be mounted on cluster servers 
+							// as: serverS3BucketMountDir/<bucketname> (see constants.js)
+							var copyPathItem = serverS3BucketMountDir + batchEntries[i].replace('+', ' ').replace('%2B', '+');
 							manifestContents.entries.push({
 								/*
 								 * fix url encoding for files with spaces. Space values come in
-								 * from Lambda with '+' and plus values come in as %2B. Redshift
-								 * wants the original S3 value
+								 * from Lambda with '+' and plus values come in as %2B. 
 								 */
 								url : 's3://' + batchEntries[i].replace('+', ' ').replace('%2B', '+'),
+								// Add vertica copyPath - informational only, as Vertica does not use manifest file for copy
+								copyPath : copyPathItem,
 								mandatory : true
 							});
+							// Build comma separated list of filepaths for Vertica COPY
+							if (!copyPathList) {
+                                                                copyPathList = copyPathItem;
+							} else {
+								copyPathList += ', ' + copyPathItem;
+							}
 						}
 
 						var s3PutParams = {
@@ -601,14 +620,14 @@ exports.handler =
 						 * command in the callback letting us know that the manifest was
 						 * created correctly
 						 */
-						s3.putObject(s3PutParams, exports.loadRedshiftWithManifest.bind(undefined, config, thisBatchId, s3Info,
-								manifestInfo));
+						s3.putObject(s3PutParams, exports.loadVerticaWithManifest.bind(undefined, config, thisBatchId, s3Info,
+								manifestInfo, copyPathList));
 					};
 
 			/**
-			 * Function run when the Redshift manifest write completes succesfully
+			 * Function run when the manifest write completes succesfully
 			 */
-			exports.loadRedshiftWithManifest = function(config, thisBatchId, s3Info, manifestInfo, err, data) {
+			exports.loadVerticaWithManifest = function(config, thisBatchId, s3Info, manifestInfo, copyPathList, err, data) {
 				if (err) {
 					console.log("Error on Manifest Creation");
 					console.log(err);
@@ -633,7 +652,7 @@ exports.handler =
 					async.map(clustersToLoad, function(item, callback) {
 						// call the load cluster function, passing it the
 						// continuation callback
-						exports.loadCluster(config, thisBatchId, s3Info, manifestInfo, item, callback);
+						exports.loadCluster(config, thisBatchId, s3Info, manifestInfo, copyPathList, item, callback);
 					}, function(err, results) {
 						if (err) {
 							console.log(err);
@@ -701,12 +720,12 @@ exports.handler =
 			};
 
 			/**
-			 * Function which loads a redshift cluster
+			 * Function which loads a Vertica cluster
 			 * 
 			 */
 			exports.loadCluster =
-					function(config, thisBatchId, s3Info, manifestInfo, clusterInfo, callback) {
-						/* build the redshift copy command */
+					function(config, thisBatchId, s3Info, manifestInfo, copyPathList, clusterInfo, callback) {
+						/* build the Vertica copy command */
 						var copyCommand = '';
 
 						// add the truncate option if requested
@@ -714,9 +733,7 @@ exports.handler =
 							copyCommand = 'truncate table ' + clusterInfo.targetTable.S + ';\n';
 						}
 
-						var encryptedItems =
-								[ kmsCrypto.stringToBuffer(config.secretKeyForS3.S),
-										kmsCrypto.stringToBuffer(clusterInfo.connectPassword.S) ];
+						var encryptedItems = [ kmsCrypto.stringToBuffer(clusterInfo.connectPassword.S) ];
 
 						// decrypt the encrypted items
 						kmsCrypto.decryptAll(encryptedItems, function(err, decryptedConfigItems) {
@@ -726,55 +743,30 @@ exports.handler =
 									cluster : clusterInfo.clusterEndpoint.S
 								});
 							} else {
-								copyCommand =
-										copyCommand + 'begin;\nCOPY ' + clusterInfo.targetTable.S + ' from \'s3://'
-												+ manifestInfo.manifestPath + '\' with credentials as \'aws_access_key_id='
-												+ config.accessKeyForS3.S + ';aws_secret_access_key=' + decryptedConfigItems[0].toString()
-												+ '\' manifest ';
+								copyCommand = copyCommand + 'COPY ' + clusterInfo.targetTable.S + ' from ' + copyPathList   
 
-								// add data formatting directives
-								if (config.dataFormat.S === 'CSV') {
-									copyCommand = copyCommand + ' delimiter \'' + config.csvDelimiter.S + '\'\n';
-								} else if (config.dataFormat.S === 'JSON') {
-									if (config.jsonPath !== undefined) {
-										copyCommand = copyCommand + 'json \'' + config.jsonPath.S + '\'\n';
-									} else {
-										copyCommand = copyCommand + 'json \'auto\' \n';
-									}
-								} else {
-									callback(null, {
-										status : ERROR,
-										error : 'Unsupported data format ' + config.dataFormat.S,
-										cluster : clusterInfo.clusterEndpoint.S
-									});
-								}
-
-								// add compression directives
-								if (config.compression !== undefined) {
-									copyCommand = copyCommand + ' ' + config.compression.S + '\n';
-								}
-
-								// add copy options
+								// add optional copy options
 								if (config.copyOptions !== undefined) {
 									copyCommand = copyCommand + config.copyOptions.S + '\n';
 								}
 
-								copyCommand = copyCommand + ";\ncommit;";
 
 								// build the connection string
-								var dbString =
-										'postgres://' + clusterInfo.connectUser.S + ":" + decryptedConfigItems[1].toString() + "@"
-												+ clusterInfo.clusterEndpoint.S + ":" + clusterInfo.clusterPort.N;
-								if (clusterInfo.clusterDB) {
-									dbString = dbString + '/' + clusterInfo.clusterDB.S;
-								}
-								console
-										.log("Connecting to Database " + clusterInfo.clusterEndpoint.S + ":" + clusterInfo.clusterPort.N);
-
+								console.log("Connecting to Database " + clusterInfo.clusterEndpoint.S + ":" + clusterInfo.clusterPort.N);
+								var dbConnectArgs = {
+									host: clusterInfo.clusterEndpoint.S,
+									port: clusterInfo.clusterPort.N,
+									user: clusterInfo.connectUser.S,
+									password: decryptedConfigItems[1].toString(),
+								} ;
 								/*
 								 * connect to database and run the copy command set
 								 */
-								pg.connect(dbString, function(err, client, done) {
+								console.log("Connecting to vertica!");
+								console.log(copyCommand);
+								var client = vertica.connect(
+										dbConnectArgs,
+										function(err, client, done) {
 									if (err) {
 										callback(null, {
 											status : ERROR,
@@ -987,7 +979,7 @@ exports.handler =
 							console.log(JSON.stringify(batchError));
 
 							if (config.failureTopicARN) {
-								exports.sendSNS(config.failureTopicARN.S, "Lambda Redshift Batch Load " + thisBatchId + " Failure",
+								exports.sendSNS(config.failureTopicARN.S, "Lambda Vertica Batch Load " + thisBatchId + " Failure",
 										messageBody, function() {
 											context.done(error, JSON.stringify(batchError));
 										}, function(err) {
@@ -999,7 +991,7 @@ exports.handler =
 							}
 						} else {
 							if (config.successTopicARN) {
-								exports.sendSNS(config.successTopicARN.S, "Lambda Redshift Batch Load " + thisBatchId + " OK",
+								exports.sendSNS(config.successTopicARN.S, "Lambda Vertica Batch Load " + thisBatchId + " OK",
 										messageBody, function() {
 											context.done(null, null);
 										}, function(err) {
@@ -1021,7 +1013,7 @@ exports.handler =
 					
 			if (!event.Records) {
 				// filter out unsupported events
-				console.log("Event type unsupported by Lambda Redshift Loader");
+				console.log("Event type unsupported by Lambda Vertica Loader");
 				console.log(JSON.stringify(event));
 				context.done(null, null);
 			} else {
