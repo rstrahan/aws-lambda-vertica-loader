@@ -51,7 +51,7 @@ var rl = readline.createInterface({
 var qs = [];
 
 q_region = function(callback) {
-	rl.question('Enter the Region for the Configuration > ', function(answer) {
+	rl.question('Enter the Region for the Configuration (Reqd.) > ', function(answer) {
 		if (common.blank(answer) !== null) {
 			common.validateArrayContains([ "ap-northeast-1", "ap-southeast-1", "ap-southeast-2", "eu-central-1", "eu-west-1",
 					"sa-east-1", "us-east-1", "us-west-1", "us-west-2" ], answer.toLowerCase(), rl);
@@ -70,7 +70,7 @@ q_region = function(callback) {
 };
 
 q_s3Prefix = function(callback) {
-	rl.question('Enter the Configuration S3 Bucket & Prefix > ', function(answer) {
+	rl.question('Enter the Configuration S3 Bucket & Prefix (Reqd.) > ', function(answer) {
 		common.validateNotNull(answer, 'You Must Provide an S3 Bucket Name, and optionally a Prefix', rl);
 
 		// setup prefix to be * if one was not provided
@@ -96,8 +96,8 @@ q_s3Prefix = function(callback) {
 };
 
 q_clusterEndpoint = function(callback) {
-	rl.question('Enter the Cluster Endpoint > ', function(answer) {
-		common.validateNotNull(answer, 'You Must Provide a Cluster Endpoint', rl);
+	rl.question('Enter the Vertica Cluster Endpoint (Public IP or DNS name) (Reqd.) > ', function(answer) {
+		common.validateNotNull(answer, 'You Must Provide a Vertica Cluster Endpoint', rl);
 		clusterConfig.M.clusterEndpoint = {
 			S : answer
 		};
@@ -107,29 +107,19 @@ q_clusterEndpoint = function(callback) {
 };
 
 q_clusterPort = function(callback) {
-	rl.question('Enter the Cluster Port > ', function(answer) {
+	rl.question('Enter the Vertica Cluster Port [5433]> ', function(answer) {
+                if (answer === '') { 
+			answer = '5433' 
+		}
 		clusterConfig.M.clusterPort = {
 			N : '' + common.getIntValue(answer, rl)
 		};
-
 		callback(null);
 	});
 };
 
-q_clusterDB = function(callback) {
-	rl.question('Enter the Database Name > ', function(answer) {
-		if (common.blank(answer) !== null) {
-			clusterConfig.M.clusterDB = {
-				S : answer
-			};
-
-			callback(null);
-		}
-	});
-};
-
 q_userName = function(callback) {
-	rl.question('Enter the Database Username > ', function(answer) {
+	rl.question('Enter the Vertica Database Username (Reqd.) > ', function(answer) {
 		common.validateNotNull(answer, 'You Must Provide a Username', rl);
 		clusterConfig.M.connectUser = {
 			S : answer
@@ -140,7 +130,7 @@ q_userName = function(callback) {
 };
 
 q_userPwd = function(callback) {
-	rl.question('Enter the Database Password > ', function(answer) {
+	rl.question('Enter the Vertica Database Password (Reqd.) > ', function(answer) {
 		common.validateNotNull(answer, 'You Must Provide a Password', rl);
 
 		kmsCrypto.encrypt(answer, function(err, ciphertext) {
@@ -154,7 +144,7 @@ q_userPwd = function(callback) {
 };
 
 q_table = function(callback) {
-	rl.question('Enter the Table to be Loaded > ', function(answer) {
+	rl.question('Enter the Table to be Loaded (Reqd.) > ', function(answer) {
 		common.validateNotNull(answer, 'You Must Provide a Table Name', rl);
 		clusterConfig.M.targetTable = {
 			S : answer
@@ -164,15 +154,31 @@ q_table = function(callback) {
 	});
 };
 
-q_truncateTable = function(callback) {
-	rl.question('Should the Table be Truncated before Load? (Y/N) > ', function(answer) {
-		clusterConfig.M.truncateTarget = {
-			BOOL : common.getBooleanValue(answer)
-		};
-
-		callback(null);
-	});
+q_preLoadStatement = function(callback) {
+        rl.question('Enter SQL statement to run before the load (Optional)> ',
+                        function(answer) {
+                                if (common.blank(answer) !== null) {
+                                        clusterConfig.M.preLoadStatement = {
+                                                S : answer
+                                        };
+                                }
+                                callback(null);
+                        });
 };
+
+q_postLoadStatement = function(callback) {
+        rl.question('Enter SQL statement to run after the load (Optional)> ',
+                        function(answer) {
+                                if (common.blank(answer) !== null) {
+                                        clusterConfig.M.postLoadStatement = {
+                                                S : answer
+                                        };
+                                }
+                                callback(null);
+                        });
+};
+
+
 
 last = function(callback) {
 	rl.close();
@@ -203,11 +209,11 @@ qs.push(q_region);
 qs.push(q_s3Prefix);
 qs.push(q_clusterEndpoint);
 qs.push(q_clusterPort);
-qs.push(q_clusterDB);
-qs.push(q_table);
-qs.push(q_truncateTable);
 qs.push(q_userName);
 qs.push(q_userPwd);
+qs.push(q_table);
+qs.push(q_preLoadStatement);
+qs.push(q_postLoadStatement);
 
 // always have to have the 'last' function added to halt the readline channel
 // and run the setup

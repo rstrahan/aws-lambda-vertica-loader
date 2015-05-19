@@ -588,24 +588,17 @@ exports.handler =
 						for (var i = 0; i < batchEntries.length; i++) {
 							// copyPath used for Vertica loads - S3 bucket must be mounted on cluster servers 
 							// as: serverS3BucketMountDir/<bucketname> (see constants.js)
-							var copyPathItem = serverS3BucketMountDir + batchEntries[i].replace('+', ' ').replace('%2B', '+');
-							manifestContents.entries.push({
-								/*
-								 * fix url encoding for files with spaces. Space values come in
-								 * from Lambda with '+' and plus values come in as %2B. 
-								 */
-								url : 's3://' + batchEntries[i].replace('+', ' ').replace('%2B', '+'),
-								// Add vertica copyPath - informational only, as Vertica does not use manifest file for copy
-								copyPath : copyPathItem,
-								mandatory : true
-							});
-							// Build comma separated list of filepaths for Vertica COPY
+							var copyPathItem = "'" + serverS3BucketMountDir + batchEntries[i].replace('+', ' ').replace('%2B', '+') + "'";
 							if (!copyPathList) {
                                                                 copyPathList = copyPathItem;
 							} else {
 								copyPathList += ', ' + copyPathItem;
 							}
 						}
+						manifestContents.entries.push({
+							// Add vertica copyPath - informational only, as Vertica does not use manifest file for copy
+							copyPath : copyPathList
+						});
 
 						var s3PutParams = {
 							Bucket : manifestInfo.manifestBucket,
@@ -662,6 +655,7 @@ exports.handler =
 						// then close the batch OK - otherwise fail
 						var allOK = true;
 						var loadState = {};
+						var loadStatements = {};
 
 						for (var i = 0; i < results.length; i++) {
 							if (!results[i] || results[i].status === ERROR) {
@@ -674,6 +668,11 @@ exports.handler =
 								status : results[i].status,
 								error : results[i].error
 							};
+                                                        loadStatements[results[i].cluster] = {
+                                                                preLoadStmt : results[i].preLoadStmt,
+                                                                loadStmt : results[i].loadStmt,
+                                                                postLoadStmt : results[i].postLoadStmt
+                                                        };
 						}
 
 						var loadStateRequest = {
@@ -693,6 +692,12 @@ exports.handler =
 										S : JSON.stringify(loadState)
 									}
 								},
+                                                                clusterLoadStatements : {
+                                                                        Action : 'PUT',
+                                                                        Value : {
+                                                                                S : JSON.stringify(loadStatements)
+                                                                        }
+                                                                },
 								lastUpdate : {
 									Action : 'PUT',
 									Value : {
@@ -704,14 +709,14 @@ exports.handler =
 						dynamoDB.updateItem(loadStateRequest, function(err, data) {
 							if (err) {
 								console.log("Error while attaching per-Cluster Load State");
-								exports.failBatch(err, config, thisBatchId, s3Info, manifestInfo);
+								exports.failBatch(err, config, thisBatchId, s3Info, manifestInfo, loadStatements);
 							} else {
 								if (allOK === true) {
 									// close the batch as OK
-									exports.closeBatch(null, config, thisBatchId, s3Info, manifestInfo, loadState);
+									exports.closeBatch(null, config, thisBatchId, s3Info, manifestInfo, loadStatements);
 								} else {
 									// close the batch as failure
-									exports.failBatch(loadState, config, thisBatchId, s3Info, manifestInfo, loadState);
+									exports.failBatch(loadState, config, thisBatchId, s3Info, manifestInfo, loadStatements);
 								}
 							}
 						});
@@ -725,17 +730,11 @@ exports.handler =
 			 */
 			exports.loadCluster =
 					function(config, thisBatchId, s3Info, manifestInfo, copyPathList, clusterInfo, callback) {
+					
 						/* build the Vertica copy command */
 						var copyCommand = '';
-
-						// add the truncate option if requested
-						if (clusterInfo.truncateTarget && clusterInfo.truncateTarget.BOOL) {
-							copyCommand = 'truncate table ' + clusterInfo.targetTable.S + ';\n';
-						}
-
-						var encryptedItems = [ kmsCrypto.stringToBuffer(clusterInfo.connectPassword.S) ];
-
 						// decrypt the encrypted items
+						var encryptedItems = [ kmsCrypto.stringToBuffer(clusterInfo.connectPassword.S) ];
 						kmsCrypto.decryptAll(encryptedItems, function(err, decryptedConfigItems) {
 							if (err) {
 								callback(err, {
@@ -747,23 +746,21 @@ exports.handler =
 
 								// add optional copy options
 								if (config.copyOptions !== undefined) {
-									copyCommand = copyCommand + config.copyOptions.S + '\n';
+									copyCommand = copyCommand + ' ' + config.copyOptions.S + '\n';
 								}
 
 
 								// build the connection string
-								console.log("Connecting to Database " + clusterInfo.clusterEndpoint.S + ":" + clusterInfo.clusterPort.N);
+								console.log("Connecting to Vertica Database " + clusterInfo.clusterEndpoint.S + ":" + clusterInfo.clusterPort.N);
 								var dbConnectArgs = {
 									host: clusterInfo.clusterEndpoint.S,
 									port: clusterInfo.clusterPort.N,
 									user: clusterInfo.connectUser.S,
-									password: decryptedConfigItems[1].toString(),
+									password: decryptedConfigItems[0].toString(),
 								} ;
 								/*
 								 * connect to database and run the copy command set
 								 */
-								console.log("Connecting to vertica!");
-								console.log(copyCommand);
 								var client = vertica.connect(
 										dbConnectArgs,
 										function(err, client, done) {
@@ -774,26 +771,81 @@ exports.handler =
 											cluster : clusterInfo.clusterEndpoint.S
 										});
 									} else {
+										console.log("Connected") ;
+										var preLoad = "" ;
+										var load = "" ;
+										var postLoad = "" ;
+										// Run preLoad Statement, if defined - failure will not affect batch state
+										if (clusterInfo.preLoadStatement !== undefined) {
+											var statement = clusterInfo.preLoadStatement.S ;
+											console.log("Execute preLoadStatement: " + statement) ;
+											client.query(statement, function(err, result) {
+												if (err) {
+													console.log("preLoadStatement: Failed");
+													preLoad = "Failed: " + statement ;
+												} else {
+													console.log("preLoadStatement: Success");
+													preLoad = "Success: " + statement ;
+												}
+											}) ;
+										}
+										// Run Load statement					
+										console.log("Execute load statement: " + copyCommand) ;
 										client.query(copyCommand, function(err, result) {
-											// release the client thread back to
-											// the pool
-											done();
-
 											// handle errors and cleanup
 											if (err) {
+												console.log("Load: Failed");
+                                                                                                load = "Failed: " + copyCommand ;
 												callback(null, {
 													status : ERROR,
 													error : err,
+													preLoadStmt : preLoad,
+													loadStmt : load,
+													postLoadStmt : postLoad,
 													cluster : clusterInfo.clusterEndpoint.S
 												});
 											} else {
-												console.log("Load Complete");
-
-												callback(null, {
-													status : OK,
-													error : null,
-													cluster : clusterInfo.clusterEndpoint.S
-												});
+												console.log("Load: Success");
+                                                                                                load = "Success: " + copyCommand ;
+												// Run postLoad Statement, if defined
+												if (clusterInfo.postLoadStatement !== undefined) {
+													var statement = clusterInfo.postLoadStatement.S ;
+													console.log("Execute postLoadStatement: " + statement) ;
+													client.query(statement, function(err, result) {	
+														if (err) {
+															console.log("postLoadStatement: Failed");
+                                                                                                        		postLoad = "Failed: " + statement ;
+															callback(null, {
+																status : ERROR,
+			                                                                                                        error : err,
+																preLoadStmt : preLoad,
+																loadStmt : load,
+																postLoadStmt : postLoad,
+                                                                                                        			cluster : clusterInfo.clusterEndpoint.S
+															});
+														} else {
+															console.log("postLoadStatement: Success");
+                                                                                                        		postLoad = "Success: " + statement ;
+															callback(null, {
+																status : OK,
+																error : null,
+																preLoadStmt : preLoad,
+																loadStmt : load,
+																postLoadStmt : postLoad,
+																cluster : clusterInfo.clusterEndpoint.S
+															});
+														}
+													}) ;
+												} else { 
+													callback(null, {
+														status : OK,
+														error : null,
+														preLoadStmt : preLoad,
+														loadStmt : load,
+														postLoadStmt : postLoad,
+														cluster : clusterInfo.clusterEndpoint.S
+													});
+												}
 											}
 										});
 									}
@@ -807,7 +859,7 @@ exports.handler =
 			 * accordingly
 			 */
 			exports.failBatch =
-					function(loadState, config, thisBatchId, s3Info, manifestInfo) {
+					function(loadState, config, thisBatchId, s3Info, manifestInfo, loadStatements) {
 						if (config.failedManifestKey && manifestInfo) {
 							// copy the manifest to the failed location
 							manifestInfo.failedManifestPrefix =
@@ -857,18 +909,18 @@ exports.handler =
 									dynamoDB.updateItem(manifestModification, function(err, data) {
 										if (err) {
 											console.log(err);
-											exports.closeBatch(err, config, thisBatchId, s3Info, manifestInfo);
+											exports.closeBatch(err, config, thisBatchId, s3Info, manifestInfo, loadStatements);
 										} else {
 											// close the batch with the original
 											// calling error
-											exports.closeBatch(loadState, config, thisBatchId, s3Info, manifestInfo);
+											exports.closeBatch(loadState, config, thisBatchId, s3Info, manifestInfo, loadStatements);
 										}
 									});
 								}
 							});
 						} else {
 							console.log('Not requesting copy of Manifest to Failed S3 Location');
-							exports.closeBatch(loadState, config, thisBatchId, s3Info, manifestInfo);
+							exports.closeBatch(loadState, config, thisBatchId, s3Info, manifestInfo, loadStatements);
 						}
 					};
 
@@ -876,7 +928,7 @@ exports.handler =
 			 * Function which closes the batch to mark it as done, including
 			 * notifications
 			 */
-			exports.closeBatch = function(batchError, config, thisBatchId, s3Info, manifestInfo) {
+			exports.closeBatch = function(batchError, config, thisBatchId, s3Info, manifestInfo, loadStatements) {
 				var batchEndStatus;
 
 				if (batchError && batchError !== null) {
@@ -930,7 +982,7 @@ exports.handler =
 						context.done(error, err);
 					} else {
 						// send notifications
-						exports.notify(config, thisBatchId, s3Info, manifestInfo, batchError);
+						exports.notify(config, thisBatchId, s3Info, manifestInfo, batchError, loadStatements);
 					}
 				});
 			};
@@ -960,7 +1012,7 @@ exports.handler =
 
 			/** Send SNS notifications if configured for OK vs Failed status */
 			exports.notify =
-					function(config, thisBatchId, s3Info, manifestInfo, batchError) {
+					function(config, thisBatchId, s3Info, manifestInfo, batchError, loadStatements) {
 						var statusMessage = batchError ? 'error' : 'ok';
 						var errorMessage = batchError ? JSON.stringify(batchError) : null;
 						var messageBody = {
@@ -973,6 +1025,10 @@ exports.handler =
 						if (manifestInfo) {
 							messageBody.originalManifest = manifestInfo.manifestPath;
 							messageBody.failedManifest = manifestInfo.failedManifestPath;
+						}
+
+						if (loadStatements) {
+							messageBody.loadStatements = loadStatements
 						}
 
 						if (batchError && batchError !== null) {
