@@ -1,21 +1,42 @@
-# A Zero Administration AWS Lambda Based Amazon Redshift Database Loader
+# A Zero Administration AWS Lambda Based HP Vertica Database Loader
 
-With this AWS Lambda function, it's never been easier to get file data into Amazon 
-Redshift. You simply push files into a variety of locations on Amazon S3, and 
-have them automatically loaded into your Amazon Redshift clusters. 
+Running your Vertica cluster(s) on AWS? Staging your source data files on S3?
+If so, this automatic loader may be just the thing for you! It will automatically trigger when new files are dropped into a monitored S3 bucket, and will automatically load the files into target tables in one or more vertica clusters. 
 
-## Using AWS Lambda with Amazon Redshift
-Amazon Redshift is a fully managed petabyte scale data warehouse available for 
-less than $1000/TB/YR that provides AWS customers with an extremely powerful way to 
-analyse their applications and business as a whole. To load their Clusters, customers 
-ingest data from a large number of sources, whether they are FTP locations managed 
-by third parties, or internal applications generating load files. Best practice for 
-loading Amazon Redshift is to use the COPY command (http://docs.aws.amazon.com/redshift/latest/dg/r_COPY.html), which loads data in parallel from Amazon S3, Amazon DynamoDB or an HDFS file system on Amazon Elastic MapReduce (EMR). 
+Here are some of the features provided:
+- match files to be loaded based on S3 bucket/folder and filename pattern
+- control batching of new files (based on file count or time window)
+- customise load using any of the many COPY options supported by Vertica (see docs). For example:
+	- use custom parsers (eg FlexZone parsers, user defined parsers)
+	- specify ON ANY NODE to balance parallel multi-file loads across the cluster
+	- control load mode - use DIRECT to load bypass WOS when you know the batches are large
+- simultaneously load the files to multiple clusters. For each cluster you can specify:
+	- target table name (can be regular or Flex table)
+	- Optional SQL statement to run before the load
+	- Optional SQL statement to run after the load
+- subscribe to recieve notifications (by email or other delivery) via AWS's SNS service, letting you know which commands were run, and if everything worked, or not. 
 
-Whatever the input, customers must run servers that look for new data on the file 
-system, and manage the workflow of loading new data and dealing with any issues 
-that might arise. That's why we created the AWS Lambda-based Amazon Redshift loader 
-(http://github.com/awslabs/aws-lambda-redshift-loader) - it offers you the ability 
+The HP Vertica loader function runs within the AWS Lambda service. *[AWS Lambda](http://aws.amazon.com/lambda) provides an event-driven, zero-administration compute service. It allows developers to create applications that are automatically 
+hosted and scaled, while providing you with a fine-grained pricing structure."* 
+
+The code is based on the [Zero Administration AWS Based Amazon Redshift Loader](https://blogs.aws.amazon.com/bigdata/post/Tx24VJ6XF1JVJAA/A-Zero-Administration-Amazon-Redshift-Database-Loader) function, generously published by AWS under the [Amazon Software License](http://aws.amazon.com/asl/). The ["AWS-Lambda-Redshift-Loader" github repo](https://github.com/awslabs/aws-lambda-redshift-loader), was forked and modified to create the ["AWS-Lambda-Vertica-Loader" github repo](https://github.com/rstrahan/aws-lambda-vertica-loader).
+Thank you, AWS!
+
+The architecture is fairly simple.
+- Sources copy files to **S3**
+- New files generate S3 events which trigger **AWS Lambda** to run the Vertica Loader function.
+- The Vertica loader function retrieves configuration settings from **AWS DynamoDB**, batches new files, connects to one or more **Vertica clusters** to load the data, records batch status and processed files names to DynamoDB, and finally sends sucess/fail notifications via **AWS SNS**.
+
+
+
+
+
+
+
+
+
+## Using AWS Lambda with Vertica
+ it offers you the ability 
 drop files into S3 and load them into any number of database tables in multiple 
 Amazon Redshift Clusters automatically - with no servers to maintain. This is possible 
 because AWS Lambda (http://aws.amazon.com/lambda) provides an event-driven, zero-administration 
