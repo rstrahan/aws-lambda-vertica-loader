@@ -28,7 +28,7 @@ def main(args):
     bucket = s3.get_bucket(inputBucket)
     
     # create the dummy file
-    filename = "lambda-redshift-trigger-file.dummy";
+    filename = "lambda-vertica-trigger-file.dummy";
     f = open(localDir + "/" + filename, 'w')
     f.write("\n")
     f.flush()

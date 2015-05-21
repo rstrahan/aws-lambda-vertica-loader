@@ -108,6 +108,18 @@ q_s3Prefix = function(callback) {
 	});
 };
 
+q_s3MountDir = function(callback) {
+        rl.question('Enter the path to the mounted S3 bucket on Vertica nodes [' + dfltS3MountDir + ']> ', function(answer) {
+                if (answer === '') {
+                        answer = dfltS3MountDir ;
+                }
+                dynamoConfig.Item.s3MountDir = {
+                        S : answer
+                };
+                callback(null);
+        });
+};
+
 q_filenameFilter = function(callback) {
 	rl.question('Enter a Filename Filter Regex > ', function(answer) {
 		if (common.blank(answer) !== null) {
@@ -164,6 +176,8 @@ q_userPwd = function(callback) {
 		});
 	});
 };
+
+
 
 q_table = function(callback) {
 	rl.question('Enter the Table to be Loaded (Reqd.) > ', function(answer) {
@@ -239,47 +253,6 @@ q_batchTimeoutSecs = function(callback) {
 };
 
 
-q_manifestBucket = function(callback) {
-	rl
-			.question(
-					'Enter the S3 Bucket for COPY Manifests (Reqd.) > ',
-					function(answer) {
-						common
-								.validateNotNull(
-										answer,
-										'You Must Provide a Bucket Name for Manifest File Storage',
-										rl);
-						dynamoConfig.Item.manifestBucket = {
-							S : answer
-						};
-						callback(null);
-					});
-};
-
-q_manifestPrefix = function(callback) {
-	rl.question('Enter the Prefix for COPY Manifests (Reqd.) > ', function(
-			answer) {
-		common.validateNotNull(answer,
-				'You Must Provide a Prefix for Manifests', rl);
-		dynamoConfig.Item.manifestKey = {
-			S : answer
-		};
-		callback(null);
-	});
-};
-
-q_failedManifestPrefix = function(callback) {
-	rl.question('Enter the Prefix to use for Failed Load Manifest Storage (Reqd.) > ',
-			function(answer) {
-				common.validateNotNull(answer,
-						'You Must Provide a Prefix for Manifests', rl);
-				dynamoConfig.Item.failedManifestKey = {
-					S : answer
-				};
-				callback(null);
-			});
-};
-
 q_failureTopic = function(callback) {
 	rl.question('Enter the SNS Topic ARN for Failed Loads (Optional) > ',
 			function(answer) {
@@ -339,9 +312,6 @@ qs.push(q_batchSize);
 qs.push(q_batchTimeoutSecs);
 qs.push(q_userName);
 qs.push(q_userPwd);
-qs.push(q_manifestBucket);
-qs.push(q_manifestPrefix);
-qs.push(q_failedManifestPrefix);
 qs.push(q_successTopic);
 qs.push(q_failureTopic);
 

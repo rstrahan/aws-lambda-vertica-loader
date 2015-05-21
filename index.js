@@ -124,9 +124,7 @@ exports.handler =
 			exports.checkFileProcessed = function(config, thisBatchId, s3Info) {
 				var itemEntry = s3Info.bucket + '/' + s3Info.key;
 
-				// perform the idempotency check for the file before we put it
-				// into
-				// a manifest
+				// perform the idempotency check for the file
 				var fileEntry = {
 					Item : {
 						loadFile : {
@@ -364,48 +362,6 @@ exports.handler =
 			};
 
 			/**
-			 * Function which links the manifest name onto the
-			 * batch table entry
-			 */
-			exports.addManifestToBatch = function(config, thisBatchId, s3Info, manifestInfo) {
-				// build the reference to the pending batch, with an atomic
-				// add of the current file
-				var item = {
-					Key : {
-						batchId : {
-							S : thisBatchId
-						},
-						s3Prefix : {
-							S : s3Info.prefix
-						}
-					},
-					TableName : batchTable,
-					AttributeUpdates : {
-						manifestFile : {
-							Action : 'PUT',
-							Value : {
-								S : manifestInfo.manifestPath
-							}
-						},
-						lastUpdate : {
-							Action : 'PUT',
-							Value : {
-								N : '' + common.now()
-							}
-						}
-					}
-				};
-
-				dynamoDB.updateItem(item, function(err, data) {
-					if (err) {
-						console.log(err);
-					} else {
-						console.log("Linked Manifest " + manifestInfo.manifestName + " to Batch " + thisBatchId);
-					}
-				});
-			};
-
-			/**
 			 * Function to process the current pending batch, and create a batch load
 			 * process if required on the basis of size or timeout
 			 */
@@ -554,8 +510,8 @@ exports.handler =
 																console.log(err);
 																context.done(error, err);
 															} else {
-																// OK - let's create the manifest file
-																exports.createManifest(config, thisBatchId, s3Info, pendingEntries);
+																// OK - let's create the load config
+																exports.createLoadConfig(config, thisBatchId, s3Info, pendingEntries);
 															}
 														});
 													}
@@ -570,158 +526,121 @@ exports.handler =
 					};
 
 			/**
-			 * Function which will create the manifest for a given batch and entries
+			 * Function which will create the load configuration for a given batch and entries
 			 */
-			exports.createManifest =
+			exports.createLoadConfig =
 					function(config, thisBatchId, s3Info, batchEntries) {
-						console.log("Creating Manifest for Batch " + thisBatchId);
+						console.log("Creating Load configuration for Batch " + thisBatchId);
 
-						var manifestInfo = common.createManifestInfo(config);
-
-						// create the manifest file for the file to be loaded
-						var manifestContents = {
-							entries : []
-						};
 						// create list of file paths for Vertica COPY
 						var copyPathList = "";
 
 						for (var i = 0; i < batchEntries.length; i++) {
 							// copyPath used for Vertica loads - S3 bucket must be mounted on cluster servers 
 							// as: serverS3BucketMountDir/<bucketname> (see constants.js)
-							var copyPathItem = "'" + serverS3BucketMountDir + batchEntries[i].replace('+', ' ').replace('%2B', '+') + "'";
+							var copyPathItem = "'" + config.s3MountDir + batchEntries[i].replace('+', ' ').replace('%2B', '+') + "'";
 							if (!copyPathList) {
                                                                 copyPathList = copyPathItem;
 							} else {
 								copyPathList += ', ' + copyPathItem;
 							}
 						}
-						manifestContents.entries.push({
-							// Add vertica copyPath - informational only, as Vertica does not use manifest file for copy
-							copyPath : copyPathList
-						});
-
-						var s3PutParams = {
-							Bucket : manifestInfo.manifestBucket,
-							Key : manifestInfo.manifestPrefix,
-							Body : JSON.stringify(manifestContents)
-						};
-
-						console.log("Writing manifest to " + manifestInfo.manifestBucket + "/" + manifestInfo.manifestPrefix);
-
-						/*
-						 * save the manifest file to S3 and build the rest of the copy
-						 * command in the callback letting us know that the manifest was
-						 * created correctly
-						 */
-						s3.putObject(s3PutParams, exports.loadVerticaWithManifest.bind(undefined, config, thisBatchId, s3Info,
-								manifestInfo, copyPathList));
+						exports.loadVertica(undefined, config, thisBatchId, s3Info, copyPathList);
 					};
 
 			/**
-			 * Function run when the manifest write completes succesfully
+			 * Function run to invoke loading
 			 */
-			exports.loadVerticaWithManifest = function(config, thisBatchId, s3Info, manifestInfo, copyPathList, err, data) {
-				if (err) {
-					console.log("Error on Manifest Creation");
-					console.log(err);
-					exports.failBatch(err, config, thisBatchId, s3Info, manifestInfo);
-				} else {
-					console.log("Created Manifest " + manifestInfo.manifestPath + " Successfully");
+			exports.loadVertica = function(config, thisBatchId, s3Info, copyPathList) {
+				// convert the config.loadClusters list into a format that
+				// looks like a native dynamo entry
+				clustersToLoad = [];
+				for (var i = 0; i < config.loadClusters.L.length; i++) {
+					clustersToLoad[clustersToLoad.length] = config.loadClusters.L[i].M;
+				}
 
-					// add the manifest file to the batch - this will NOT stop
-					// processing if it fails
-					exports.addManifestToBatch(config, thisBatchId, s3Info, manifestInfo);
+				console.log("Loading " + clustersToLoad.length + " Clusters");
 
-					// convert the config.loadClusters list into a format that
-					// looks like a native dynamo entry
-					clustersToLoad = [];
-					for (var i = 0; i < config.loadClusters.L.length; i++) {
-						clustersToLoad[clustersToLoad.length] = config.loadClusters.L[i].M;
+				// run all the cluster loaders in parallel
+				async.map(clustersToLoad, function(item, callback) {
+					// call the load cluster function, passing it the
+					// continuation callback
+					exports.loadCluster(config, thisBatchId, s3Info, copyPathList, item, callback);
+				}, function(err, results) {
+					if (err) {
+						console.log(err);
 					}
 
-					console.log("Loading " + clustersToLoad.length + " Clusters");
+					// go through all the results - if they were all OK,
+					// then close the batch OK - otherwise fail
+					var allOK = true;
+					var loadState = {};
+					var loadStatements = {};
 
-					// run all the cluster loaders in parallel
-					async.map(clustersToLoad, function(item, callback) {
-						// call the load cluster function, passing it the
-						// continuation callback
-						exports.loadCluster(config, thisBatchId, s3Info, manifestInfo, copyPathList, item, callback);
-					}, function(err, results) {
-						if (err) {
-							console.log(err);
-						}
+					for (var i = 0; i < results.length; i++) {
+						if (!results[i] || results[i].status === ERROR) {
+							var allOK = false;
+							
+							console.log("Cluster Load Failure " + results[i].error + " on Cluster " + results[i].cluster);
+						} 
+						// log the response state for each cluster
+						loadState[results[i].cluster] = {
+							status : results[i].status,
+							error : results[i].error
+						};
+                                                       loadStatements[results[i].cluster] = {
+                                                               preLoadStmt : results[i].preLoadStmt,
+                                                               loadStmt : results[i].loadStmt,
+                                                               postLoadStmt : results[i].postLoadStmt
+                                                       };
+					}
 
-						// go through all the results - if they were all OK,
-						// then close the batch OK - otherwise fail
-						var allOK = true;
-						var loadState = {};
-						var loadStatements = {};
-
-						for (var i = 0; i < results.length; i++) {
-							if (!results[i] || results[i].status === ERROR) {
-								var allOK = false;
-								
-								console.log("Cluster Load Failure " + results[i].error + " on Cluster " + results[i].cluster);
-							} 
-							// log the response state for each cluster
-							loadState[results[i].cluster] = {
-								status : results[i].status,
-								error : results[i].error
-							};
-                                                        loadStatements[results[i].cluster] = {
-                                                                preLoadStmt : results[i].preLoadStmt,
-                                                                loadStmt : results[i].loadStmt,
-                                                                postLoadStmt : results[i].postLoadStmt
-                                                        };
-						}
-
-						var loadStateRequest = {
-							Key : {
-								batchId : {
-									S : thisBatchId,
-								},
-								s3Prefix : {
-									S : s3Info.prefix
+					var loadStateRequest = {
+						Key : {
+							batchId : {
+								S : thisBatchId,
+							},
+							s3Prefix : {
+								S : s3Info.prefix
+							}
+						},
+						TableName : batchTable,
+						AttributeUpdates : {
+							clusterLoadStatus : {
+								Action : 'PUT',
+								Value : {
+									S : JSON.stringify(loadState)
 								}
 							},
-							TableName : batchTable,
-							AttributeUpdates : {
-								clusterLoadStatus : {
-									Action : 'PUT',
-									Value : {
-										S : JSON.stringify(loadState)
-									}
-								},
-                                                                clusterLoadStatements : {
-                                                                        Action : 'PUT',
-                                                                        Value : {
-                                                                                S : JSON.stringify(loadStatements)
-                                                                        }
-                                                                },
-								lastUpdate : {
-									Action : 'PUT',
-									Value : {
-										N : '' + common.now()
-									}
+                                                               clusterLoadStatements : {
+                                                                       Action : 'PUT',
+                                                                       Value : {
+                                                                               S : JSON.stringify(loadStatements)
+                                                                       }
+                                                               },
+							lastUpdate : {
+								Action : 'PUT',
+								Value : {
+									N : '' + common.now()
 								}
 							}
-						};
-						dynamoDB.updateItem(loadStateRequest, function(err, data) {
-							if (err) {
-								console.log("Error while attaching per-Cluster Load State");
-								exports.failBatch(err, config, thisBatchId, s3Info, manifestInfo, loadStatements);
+						}
+					};
+					dynamoDB.updateItem(loadStateRequest, function(err, data) {
+						if (err) {
+							console.log("Error while attaching per-Cluster Load State");
+							exports.failBatch(err, config, thisBatchId, s3Info, loadStatements);
+						} else {
+							if (allOK === true) {
+								// close the batch as OK
+								exports.closeBatch(null, config, thisBatchId, s3Info, loadStatements);
 							} else {
-								if (allOK === true) {
-									// close the batch as OK
-									exports.closeBatch(null, config, thisBatchId, s3Info, manifestInfo, loadStatements);
-								} else {
-									// close the batch as failure
-									exports.failBatch(loadState, config, thisBatchId, s3Info, manifestInfo, loadStatements);
-								}
+								// close the batch as failure
+								exports.failBatch(loadState, config, thisBatchId, s3Info, loadStatements);
 							}
-						});
+						}
 					});
-				}
+				});
 			};
 
 			/**
@@ -729,7 +648,7 @@ exports.handler =
 			 * 
 			 */
 			exports.loadCluster =
-					function(config, thisBatchId, s3Info, manifestInfo, copyPathList, clusterInfo, callback) {
+					function(config, thisBatchId, s3Info, copyPathList, clusterInfo, callback) {
 					
 						/* build the Vertica copy command */
 						var copyCommand = '';
@@ -857,78 +776,18 @@ exports.handler =
 			/**
 			 * Function which marks a batch as failed and sends notifications
 			 * accordingly
+			 * Original version handled failed manifest copies - this code has bene removed, so function is no a no-op.
 			 */
-			exports.failBatch =
-					function(loadState, config, thisBatchId, s3Info, manifestInfo, loadStatements) {
-						if (config.failedManifestKey && manifestInfo) {
-							// copy the manifest to the failed location
-							manifestInfo.failedManifestPrefix =
-									manifestInfo.manifestPrefix.replace(manifestInfo.manifestKey + '/', config.failedManifestKey.S + '/');
-							manifestInfo.failedManifestPath = manifestInfo.manifestBucket + '/' + manifestInfo.failedManifestPrefix;
-
-							var copySpec = {
-								Bucket : manifestInfo.manifestBucket,
-								Key : manifestInfo.failedManifestPrefix,
-								CopySource : manifestInfo.manifestPath
-							};
-							s3.copyObject(copySpec, function(err, data) {
-								if (err) {
-									console.log(err);
-									exports.closeBatch(err, config, thisBatchId, s3Info, manifestInfo);
-								} else {
-									console.log('Created new Failed Manifest ' + manifestInfo.failedManifestPath);
-
-									// update the batch entry showing the failed
-									// manifest
-									// location
-									var manifestModification = {
-										Key : {
-											batchId : {
-												S : thisBatchId
-											},
-											s3Prefix : {
-												S : s3Info.prefix
-											}
-										},
-										TableName : batchTable,
-										AttributeUpdates : {
-											manifestFile : {
-												Action : 'PUT',
-												Value : {
-													S : manifestInfo.failedManifestPath
-												}
-											},
-											lastUpdate : {
-												Action : 'PUT',
-												Value : {
-													N : '' + common.now()
-												}
-											}
-										}
-									};
-									dynamoDB.updateItem(manifestModification, function(err, data) {
-										if (err) {
-											console.log(err);
-											exports.closeBatch(err, config, thisBatchId, s3Info, manifestInfo, loadStatements);
-										} else {
-											// close the batch with the original
-											// calling error
-											exports.closeBatch(loadState, config, thisBatchId, s3Info, manifestInfo, loadStatements);
-										}
-									});
-								}
-							});
-						} else {
-							console.log('Not requesting copy of Manifest to Failed S3 Location');
-							exports.closeBatch(loadState, config, thisBatchId, s3Info, manifestInfo, loadStatements);
-						}
-					};
+			exports.failBatch = function(loadState, config, thisBatchId, s3Info, loadStatements) {
+				console.log('Batch failed.');
+				exports.closeBatch(loadState, config, thisBatchId, s3Info, loadStatements);
+				};
 
 			/**
 			 * Function which closes the batch to mark it as done, including
 			 * notifications
 			 */
-			exports.closeBatch = function(batchError, config, thisBatchId, s3Info, manifestInfo, loadStatements) {
+			exports.closeBatch = function(batchError, config, thisBatchId, s3Info, loadStatements) {
 				var batchEndStatus;
 
 				if (batchError && batchError !== null) {
@@ -982,7 +841,7 @@ exports.handler =
 						context.done(error, err);
 					} else {
 						// send notifications
-						exports.notify(config, thisBatchId, s3Info, manifestInfo, batchError, loadStatements);
+						exports.notify(config, thisBatchId, s3Info, batchError, loadStatements);
 					}
 				});
 			};
@@ -1012,7 +871,7 @@ exports.handler =
 
 			/** Send SNS notifications if configured for OK vs Failed status */
 			exports.notify =
-					function(config, thisBatchId, s3Info, manifestInfo, batchError, loadStatements) {
+					function(config, thisBatchId, s3Info, batchError, loadStatements) {
 						var statusMessage = batchError ? 'error' : 'ok';
 						var errorMessage = batchError ? JSON.stringify(batchError) : null;
 						var messageBody = {
@@ -1021,11 +880,6 @@ exports.handler =
 							batchId : thisBatchId,
 							s3Prefix : s3Info.prefix
 						};
-
-						if (manifestInfo) {
-							messageBody.originalManifest = manifestInfo.manifestPath;
-							messageBody.failedManifest = manifestInfo.failedManifestPath;
-						}
 
 						if (loadStatements) {
 							messageBody.loadStatements = loadStatements
