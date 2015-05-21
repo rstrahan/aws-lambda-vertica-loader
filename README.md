@@ -17,78 +17,66 @@ Here are some of the features provided:
 - subscribe to recieve notifications (by email or other delivery) via AWS's SNS service, letting you know which commands were run, and if everything worked, or not. 
 
 The HP Vertica loader function runs within the AWS Lambda service. *[AWS Lambda](http://aws.amazon.com/lambda) provides an event-driven, zero-administration compute service. It allows developers to create applications that are automatically 
-hosted and scaled, while providing you with a fine-grained pricing structure."* 
+hosted and scaled, while providing you with a fine-grained pricing structure. With AWS Lambda you get automatic scaling, high availability, and built in Amazon CloudWatch Logging."* 
 
 The code is based on the [Zero Administration AWS Based Amazon Redshift Loader](https://blogs.aws.amazon.com/bigdata/post/Tx24VJ6XF1JVJAA/A-Zero-Administration-Amazon-Redshift-Database-Loader) function, generously published by AWS under the [Amazon Software License](http://aws.amazon.com/asl/). The ["AWS-Lambda-Redshift-Loader" github repo](https://github.com/awslabs/aws-lambda-redshift-loader), was forked and modified to create the ["AWS-Lambda-Vertica-Loader" github repo](https://github.com/rstrahan/aws-lambda-vertica-loader).
 Thank you, AWS!
 
 The architecture is fairly simple.
-- Sources copy files to **S3**
-- New files generate S3 events which trigger **AWS Lambda** to run the Vertica Loader function.
-- The Vertica loader function retrieves configuration settings from **AWS DynamoDB**, batches new files, connects to one or more **Vertica clusters** to load the data, records batch status and processed files names to DynamoDB, and finally sends sucess/fail notifications via **AWS SNS**.
-
-
-
-
-
-
-
-
-
-## Using AWS Lambda with Vertica
- it offers you the ability 
-drop files into S3 and load them into any number of database tables in multiple 
-Amazon Redshift Clusters automatically - with no servers to maintain. This is possible 
-because AWS Lambda (http://aws.amazon.com/lambda) provides an event-driven, zero-administration 
-compute service. It allows developers to create applications that are automatically 
-hosted and scaled, while providing you with a fine-grained pricing structure.
+- [AWS S3](http://aws.amazon.com/s3) provides source file repository
+- [AWS Lambda](http://aws.amazon.com/lambda) is used to run our Vertica Loader function when new files are added to S3
+- [AWS DynamoDB](http://aws.amazon.com/dynamodb) is used to store load configurations (passwords are encrypted!), and to track status of batches and individual files
+- [AWS SNS](http://aws.amazon.com/sns) (Simple Notification Service) is used to publish notifications for successful and failed loads. Users can subscribe to receive notifications by email.
+- [HP Vertica](http://www.vertica.com/), of course, provides the massively scalable, feature loaded, simply fast data analytics platform that we all know and love!
 
 ![Loader Architecture](Architecture.png)
 
-The function maintains a list of all the files to be loaded from S3 into Amazon 
-Redshift with DynamoDB. This list allows us to confirm that a file is loaded 
-only one time, and allows you to determine when a file was loaded and into which table. 
-Input file locations are buffered up to a specified batch size that you control, or 
-you can specify a time-based threshold which triggers a load. 
+## Instructions
 
-You can specify any of the many COPY options available, and we support loading 
-both CSV files (of any delimiter), as well as JSON files (with or without JSON 
-paths specifications). All Passwords and Access Keys are encrypted for security. 
-With AWS Lambda you get automatic scaling, high availability, and built in Amazon 
-CloudWatch Logging.
+### Step 1 - Preparing your HP Vertica Cluster(s)
 
-Finally, we've provided tools to manage the status of your load processes, with 
-built in configuration management and the ability to monitor batch status and 
-troubleshoot issues. We also support sending notifications of load status through 
-Simple Notification Service  (SNS) (http://aws.amazon.com/sns), so you have visibility 
-into how your loads are progressing over time.
+Our function, running withing the AWS Lambda compute service, must be able to connect to your Vertica cluster as a JDBC client. In the future, per AWS, AWS Lambda will support presenting the service as though it was inside your own VPC, but for now your Vertica cluster must be reachable from any internet address, on tcp port 5433. 
+Configure your VPC / Security Groups accordingly.
 
-## Getting Access to the AWS Lambda Redshift Database Loader
-You can download the AWS Lambda function today from AWSLabs: http://github.com/awslabs/aws-lambda-redshift-loader. For example, perform the following steps to complete local setup:
 
-```
-git clone https://github.com/awslabs/aws-lambda-redshift-loader.git
-cd aws-lambda-redshift-loader
-npm install
-```
-
-## Getting Started - Preparing your Amazon Redshift Clusters
-In order to load a cluster, we'll have to enable AWS Lambda to connect. To do 
-this, we must enable Cluster Security Groups to allow access from the public 
-internet.
-
-To configure a cluster security group for access:
-
-1.	Log in to the Amazon Redshift console.
-2.	Select Security in the navigation pane on the left.
-3.	Choose the cluster security group in which your cluster is configured.
-4.	Add a new Connection Type of CIDR/IP and enter the value 0.0.0.0/0.
-5.	Select Authorize to save your changes.
 
 We recommend granting Amazon Redshift users only INSERT rights on tables to be 
 loaded. Create a user with a complex password using the CREATE USER command 
 (http://docs.aws.amazon.com/redshift/latest/dg/r_CREATE_USER.html), and grant 
 INSERT using GRANT (http://docs.aws.amazon.com/redshift/latest/dg/r_GRANT.html). 
+
+
+## Step 2: Download and install the function on a client linux machine
+
+You will need to a linux machine (can be an AWS EC2 instance, on an on-premise machine - doesn't matter) in order to run the setup / configuration.
+
+Make sure you have git installed, e.g. for RHEL/CentOS, do:
+```
+sudo yum install git 
+```
+Clone the aws-lambda-vertica-loade repo from github
+```
+git clone https://github.com/rstrahan/aws-lambda-vertica-loader.git
+```
+Install npm and required node.js packages (yes, the function is written in javascript)
+```
+sudo yum install npm
+cd aws-lambda-redshift-loader
+npm install
+```
+Install AWS Node.js SDK. 
+```
+npm install aws-sdk
+```
+Configure the SDK. The full instructions are [here](http://docs.aws.amazon.com/AWSJavaScriptSDK/guide/node-configuring.html), but as a minimum you just need to create a file *~/.aws/credentials* containing your AWS access key and secret key:
+```
+[default]
+aws_access_key_id = <your_access_key_id_here>
+aws_secret_access_key = <your_secret_access_key_here>
+```
+
+
+
 
 ## Getting Started - Deploying the AWS Lambda Function
 To deploy the function:
