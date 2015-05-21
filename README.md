@@ -56,7 +56,7 @@ Once s3fs is installed, then set up your bucket mount on each node as follows:
 1. Create the /etc/passwd-s3fs file containing your AWS access key id, and secret key, separated by a ':' on a single line. E.g.:
 ```
 # sudo echo AWS_ACCESS_KEY_ID:AWS_SECRET_ACCESS_KEY > ~/.passwd-s3fs
-# sudo chmod 600 ~/.passwd-s3fs
+# sudo chmod 640 ~/.passwd-s3fs
 ```
 2. Create the mount point directory where we'll mount the bucket - /mnt/s3/<bucketname>
 ```
@@ -191,38 +191,16 @@ an environment variable ```AWS_REGION``` to the desired location.
 ## Step 6 - Finally! Entering the Configuration
 Now you are ready to create a configuration which tells the function how and if files should be loaded from S3. 
 
-Next, run the setup.js script by entering node setup.js. The script asks questions 
-about how the load should be done, including those outlined in the setup appendix 
-as the end of this document. 
+Run the setup.js script by entering ```node setup.js```. The script asks questions 
+about how the load should be done - see Configuration Reference appendix as the end of this document. 
 
-All data used to manage the lifecycle of data loads is stored in DynamoDB, and 
-the setup script automatically provisions the following tables:
-
-* LambdaVerticaBatchLoadConfig - Stores the configuration of how files in an S3 input prefix should be loaded into Vertica.
-* LambdaVerticaBatches - Stores the list of all historical and open batches that have been created. There will always be one open batch, and may be multiple closed batches per S3 input prefix from LambdaVerticaBatchLoadConfig.
-* LambdaVerticaProcessedFiles - Stores the list of all files entered into a batch, which is also used for deduplication of input files.
-
-*** IMPORTANT ***
-The tables used by this function are created with a max read & write per-second rate
-of 5. This means that you will be able to accomodate 5 concurrent file uploads
-per second being managed by ALL input locations which are event sources to this
-Lambda function. If you require more than 5 concurrent invocations/second, then 
-you MUST increase the Read IOPS on the LambdaVerticaBatchLoadConfig table, and
-the Write IOPS on LambdaVerticaBatches and LambdaVerticaProcessedFiles to the 
-maximum number of files to be concurrently processed by all Configurations.
-
-Also please NOTE that AWS Lambda only allows 100 concurrent function invocations
-as of 17 Apr 2015, so more than 100 concurrent files will result in Lambda throttling
-and there will NOT be any database load done, nor will CloudWatch logs be generated.
-
-The database password will be encrypted by the Amazon Key Management Service. Setup will create a 
-new Customer Master Key with an alias named `alias/LambaVerticaLoaderKey`.
-
-You are now ready to go. Simply place files that meet the configured format into 
+**You are now ready to go!** Simply place files that meet the configured format into 
 S3 at the location that you configured as the input location, and watch as AWS 
 Lambda loads them into your Vertica Cluster. You are charged by the number 
 of input files that are processed, plus a small charge for DynamoDB. You now have 
 a highly available load framework which doesn't require you manage servers!
+
+# Administration / Configuration changes
 
 ## Loading multiple Vertica Clusters concurrently
 Run ```node addAdditionalClusterEndpoint.js``` to add new clusters into 
@@ -320,7 +298,31 @@ when AWS Lambda last pushed events into CloudWatch Logging.
 
 You can then review each log stream, and see events where your function simply 
 buffered a file, or where it performed a load.
- 
+
+## DynamoDB tables
+
+All data used to manage the lifecycle of data loads is stored in DynamoDB, and 
+the setup script automatically provisions the following tables:
+
+* LambdaVerticaBatchLoadConfig - Stores the configuration of how files in an S3 input prefix should be loaded into Vertica.
+* LambdaVerticaBatches - Stores the list of all historical and open batches that have been created. There will always be one open batch, and may be multiple closed batches per S3 input prefix from LambdaVerticaBatchLoadConfig.
+* LambdaVerticaProcessedFiles - Stores the list of all files entered into a batch, which is also used for deduplication of input files.
+
+*** IMPORTANT ***
+The tables used by this function are created with a max read & write per-second rate
+of 5. This means that you will be able to accomodate 5 concurrent file uploads
+per second being managed by ALL input locations which are event sources to this
+Lambda function. If you require more than 5 concurrent invocations/second, then 
+you MUST increase the Read IOPS on the LambdaVerticaBatchLoadConfig table, and
+the Write IOPS on LambdaVerticaBatches and LambdaVerticaProcessedFiles to the 
+maximum number of files to be concurrently processed by all Configurations.
+
+Also please NOTE that AWS Lambda only allows 100 concurrent function invocations
+as of 17 Apr 2015, so more than 100 concurrent files will result in Lambda throttling
+and there will NOT be any database load done, nor will CloudWatch logs be generated.
+
+The database password will be encrypted by the Amazon Key Management Service. Setup will create a 
+new Customer Master Key with an alias named `alias/LambaVerticaLoaderKey`.
 
 # Configuration Reference
 
