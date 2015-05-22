@@ -7,8 +7,8 @@ If so, this AWS S3 loader for Vertica may be just the thing for you! It will aut
 Here are some of the things it can do:
 - pick up source files based on S3 bucket/prefix and filename regex pattern
 - configurable batching (multiple files can be batched into one COPY) 
-- customize load behavior using any of the many [COPY options](http://my.vertica.com/docs/7.1.x/HTML/index.htm#Authoring/SQLReferenceManual/Statements/COPY/COPY.htm%3FTocPath%3DSQL%2520Reference%2520Manual%7CSQL%2520Statements%7CCOPY%7C_____0) supported by Vertica. Some examples:
-	- use a [FlexZone parser](http://my.vertica.com/docs/7.1.x/HTML/index.htm#Authoring/FlexTables/FlexParsersReference.htm%3FTocPath%3DFlex%2520Tables%2520Guide%7CFlex%2520Parsers%2520Reference%7C_____0) to handle a variety of file formats
+- customize load behavior using any of the many COPY options supported by Vertica. Some examples:
+	- use a FlexZone parser to handle a variety of file formats
 	- specify ON ANY NODE to balance parallel multi-file loads across the cluster
 	- use DIRECT to load bypass WOS when you know the batches are large
 - simultaneously load files to multiple clusters. For each cluster you can specify:
@@ -148,78 +148,105 @@ files to S3, and perform encryption with the AWS Key Management Service:
 ```
 
 ### Step 3 - (Optional) Create SNS Notification Topics
-This function can send notifications on completion of batch processing. Using SNS, 
-you can then receive notifications through email and HTTP Push to an application, 
-or put them into a queue for later processing. You can even invoke additional Lambda
-functions to complete your data load workflow using an SNS Event Source for another
-AWS Lambda function. To receive SNS notifications for succeeded 
-loads, failed loads, or both, create SNS Topics and take note of their Amazon Resource Notations (ARN). 
+Do you want to get an email if the loader fails? Maybe you also want one every time it suceeds?
+Or, if you are very sophisticated, maybe you want to notify another application that the load has completed, or even trigger your own custom Lambda function to execute additional steps in your data load workflow?
+To receive SNS notifications for succeeded loads, failed loads, or both, log in to the AWS console, go to SNS and create appropriate 'Topics'. Note their Amazon Resource Names (ARN). 
 
-### Step 4 - Setup client machine, used for configuration and administration 
+### Step 4 - Prepare the client to use for setting up your loading configurations
 
-You will need a machine set up to run the setup and admin scripts. The instructions below assume you will use a RHEL/CentOS machine. You can use an AWS EC2 instance, or an on-premise machine - doesn't matter. 
+You will need a machine set up to run the setup and admin scripts. You can use an AWS EC2 instance, or an on-premise machine - doesn't matter. The instructions assume you are running RHEL/CentOS. 
 
-Make sure git is installed, e.g. for RHEL/CentOS, do:
+Install 'git' and 'npm', if they're not already installed
 ```
-sudo yum install git 
+sudo yum install git npm
 ```
-Clone the aws-lambda-vertica-loade repo from github
+Clone the aws-lambda-vertica-loader repo
 ```
 git clone https://github.com/rstrahan/aws-lambda-vertica-loader.git
 ```
-Install npm and required node.js packages (yes, the function is written in javascript)
+Install required node.js packages, and the AWS node.js SDK
 ```
-sudo yum install npm
 cd aws-lambda-redshift-loader
 npm install
-```
-Install AWS Node.js SDK. 
-```
 npm install aws-sdk
 ```
-Configure the SDK. The full instructions are [here](http://docs.aws.amazon.com/AWSJavaScriptSDK/guide/node-configuring.html), but as a minimum you just need to create a file *~/.aws/credentials* containing your AWS access key and secret key:
+Configure the AWS SDK. 
+As a minimum you just need to create a file `~/.aws/credentials` containing your AWS access key and secret key:
 ```
 [default]
 aws_access_key_id = AWS_ACCESS_KEY_ID
 aws_secret_access_key = AWS_SECRET_ACCESS_KEY
 ```
 
-In order to ensure communication with the correct AWS Region, you'll need to set 
-an environment variable ```AWS_REGION``` to the desired location.
-
+Set environment variable `AWS_REGION` to the desired region (add to your ~/.bashrc)
 ```export AWS_REGION=us-east-1```
 
+## Configuring a loading policy
 
-### Step 5 - Finally! Entering the Configuration
-Now you are ready to create a configuration which tells the function how and if files should be loaded from S3. 
+Finally, you are ready to create a configuration which tells the function how to load files from S3. 
 
-Run the setup.js script by entering ```node setup.js```. The script asks questions 
-about how the load should be done - see Configuration Reference appendix as the end of this document. 
+Run `node setup.js`. 
+The setup.js script asks questions about how the load should be done. You can see the questions and some sample answers below.
+```
+$ node setup.js
+Enter the Region for the Configuration [us-east-1] >
+Enter the S3 Bucket & Prefix to watch for files [Reqd.] > myBucket/db_ingest
+Enter the path to the mounted S3 bucket on Vertica nodes [/mnt/s3/]> 
+Enter a Filename Filter Regex [.*\.csv]>
+Enter the Vertica Cluster Endpoint (Public IP or DNS name) [Reqd.] > 52.2.78.41
+Enter the Vertica Cluster Port [5433]>
+Enter the Table to be Loaded [Reqd.] > testTable
+Load Options - COPY table FROM files [*options*] [Optional]> parser fdelimitedparser(delimiter=',')
+Enter SQL statement to run before the load [Optional]>
+Enter SQL statement to run after the load [Optional]> SELECT COMPUTE_FLEXTABLE_KEYS_AND_BUILD_VIEW('testTable')
+How many files should be buffered before loading? [1] > 5
+How old should we allow a Batch to be before loading (seconds)? [30]>
+Enter the Vertica Database Username [Reqd.] > Elvis
+Enter the Vertica Database Password [Reqd.] > V3rt1caR0cks
+Enter the SNS Topic ARN for Successful Loads [Optional] > arn:aws:sns:us-east-1:4828661098765:LambdaDBLoadOK
+Enter the SNS Topic ARN for Failed Loads [Optional] > arn:aws:sns:us-east-1:4828661098765:LambdaDBLoadFAIL
+Creating Tables in Dynamo DB if Required
+Configuration for bstrahan/db_ingest successfully written in us-east-1
+```
+Some of the questions have default answers, shown within square brackets. If you are happy with the default, just hit enter. If you find yourself running the setup tool a lot, you can supply your own default values by editing the file defaults_custom.js, and adding in your own default values.
+
+NOTES
+
+	If you are using a VOD cluster, then
+		a. Question 2: Do not specify an S3 bucket prefix (folder). Just use `bucketName/`. Your files must be at the root level.
+		b. Question 3: The path to S3 mounted bucket must be entered as: `/VOD_` (buckets are mounted on VOD as '/VOD_bucketName')
+		
+	The default filename filter regex will match all files with .csv suffix. If you are not loading csv files, or if you need to be more selective, modify the regex accordingly.
+	
+	Load options - if you are loading a Flex table, you must specify a compatible flex parser here - the example above works for comma delimited files. If you get fancy with the options, you might want to test by doing a local COPY first.
+	
+	In the example above, we elected to rebuild flex keys and view on the table after each batch load. This way, if new columns appear in the incoming CSV files, they will be automatically added to the flex view.
+
 
 **You are now ready to go!** Simply place files that meet the configured format into 
 S3 at the location that you configured as the input location, and watch as AWS 
-Lambda loads them into your Vertica Cluster. You are charged by the number 
-of input files that are processed, plus a small charge for DynamoDB. You now have 
-a highly available load framework which doesn't require you manage servers!
+Lambda loads them into your Vertica Cluster. 
 
-# Administration / Configuration changes
+![Lambda Activity Charts](LambdaCharts.png)
 
-## Loading multiple Vertica Clusters concurrently
-Run ```node addAdditionalClusterEndpoint.js``` to add new clusters into 
-a single configuration. This will require you enter the vital details for the 
-cluster including endpoint address and port, DB name and password, table name, load options, pre and post load statements.
+This service is cheap but it's not free. AWS will charge you by the number of input files that are processed, plus a small charge for DynamoDB. But you now have a highly available and scalable load framework which doesn't require you manage servers!
 
-## Viewing Previous Batches & Status
-If you ever need to see what happened to batch loads into your Cluster, you can 
-use the 'queryBatches.js' script to look into the LambdaVerticaBatches DynamoDB 
-table. It takes 3 arguments:
+
+## Additional tools and tips 
+
+The tools below, and their descriptions, are mostly taken wholesale from the original AWS Redshift loader. 
+
+### Loading multiple Vertica Clusters concurrently
+Run `node addAdditionalClusterEndpoint.js` to add additional clusters into a single configuration. This will require you enter the vital details for the cluster including endpoint address and port, DB name and password, table name, load options, pre and post load statements.
+
+### Viewing Previous Batches & Status
+You can use the 'queryBatches.js' script to look into the LambdaVerticaBatches DynamoDB table. It takes 3 arguments:
 
 * region - the region in which the AWS Lambda function is deployed
 * status - the status you are querying for, including 'error', 'complete', 'pending', or 'locked'
 * date - optional date argument to use as a start date for querying batches
 
-Running ```node queryBatches.js us-east-1 error``` would return a list of all batches 
-with a status of 'error' in the US East region.
+Running `node queryBatches.js us-east-1 error` would return a list of all batches with a status of 'error' in the US East region.
 
 You can use describeBatch.js to 
 show all detail for a batch. It takes 3 arguments as well:
@@ -228,15 +255,14 @@ show all detail for a batch. It takes 3 arguments as well:
 * batchId - the batch you would like to see the detail for
 * s3Prefix - the S3 Prefix the batch was created for
 
-## Clearing Processed Files
+### Clearing Processed Files
 We'll only load a file one time by default, but in certain rare cases you might 
 want to re-process a file, such as if a batch goes into error state for some reason. 
-If so, use the 'processedFiles.js' script to query or delete processed files entries. 
+If so, you can use the 'processedFiles.js' script to query or delete processed files entries. 
 The script takes an 'operation type' and 'filename' as arguments; use -q to query 
-if a file has been processed, and -d to delete a given file entry. An example of 
-the processed files store can be seen below.
+if a file has been processed, and -d to delete a given file entry. 
  
-## Reprocessing a Batch
+### Reprocessing a Batch
 If you ever need to reprocess a batch - for example if it failed to load the required 
 files for some reason - then you can use the reprocessBatch.js script. This takes 
 the same arguments as describeBatch.js (region, batch ID & input location). The 
@@ -246,27 +272,24 @@ then the script forces an S3 event to be generated for the file. This will be
 captured and reprocessed by the function as it was originally. Please note you 
 can only reprocess batches that are not in 'open' status.
 
-## Unlocking a Batch
+### Unlocking a Batch
 It is possible, but rare, that a batch would become locked but not be being processed 
-by AWS Lambda. If this were to happen, please use ```unlockBatch.js``` including 
+by AWS Lambda. If this were to happen, please use `unlockBatch.js` including 
 the region and Batch ID to set the batch to 'open' state again.
 
-## Changing your stored Database Password 
+### Changing your stored Database Password 
 Currently you must edit the configuration manually in Dynamo DB to make changes.
-If you need to update your Redshift DB Password then you can use the ```encryptValue.js``` script to encrypt
+If you need to update your Redshift DB Password then you can use the `encryptValue.js` script to encrypt
 a value using the Lambda Vertica Loader master key and encryption context. 
-
-To run:
 ```
 node encryptValue.js <region> <Value to Encrypt>
 ```
-
 This script encrypts the value with Amazon KMS, and then verifies the encryption is
 correct before returning a JSON object which includes the input value and the
 encrypted Ciphertext. You can use the 'encryptedCiphertext' attribute of this object
 to update the Dynamo DB Configuration. 
 
-## Ensuring Loads happen every N minutes
+### Ensuring Loads happen every N minutes
 If you have a prefix that doesn't receive files very often, and want to ensure 
 that files are loaded every N minutes, use the following process to force periodic loads. 
 
@@ -274,34 +297,21 @@ When you create the configuration, add a filenameFilterRegex such as '.*\.csv', 
 only loads CSV files that are put into the specified S3 prefix. Then every N minutes, 
 schedule the included dummy file generator through a CRON Job. 
 
-```./path/to/function/dir/generate-trigger-file.py <region> <input bucket> <input prefix> <local working directory>```
-
-* region - the region in which the input bucket for loads resides
-* input bucket - the bucket which is configured as an input location
-* input prefix - the prefix which is configured as an input location
-* local working directory - the location where the stub dummy file will be kept prior to upload into S3
+`./path/to/function/dir/generate-trigger-file.py <region> <input bucket> <input prefix> <local working directory>`
 
 This writes a file called 'lambda-vertica-trigger-file.dummy' to the configured 
 input prefix, which causes your deployed function to scan the open pending batch 
 and load the contents if the timeout seconds limit has been reached.
 
-## Reviewing Logs
+### Reviewing Logs & Metrics
 For normal operation, you won't have to do anything from an administration perspective. 
 Files placed into the configured S3 locations will be loaded when the number of 
 new files equals the configured batch size. You may want to create an operational 
 process to deal with failure notifications, but you can also just view the performance 
 of your loader by looking at Amazon CloudWatch. Open the CloudWatch console, and 
-then click 'Logs' in the lefthand navigation pane. You can then select the log 
-group for your function, with a name such as `/aws/lambda/<My Function>`.
+then click 'Logs' or 'Metrics' in the lefthand navigation pane. You can then select your Lamdba function by name, eg: `/aws/lambda/MyVerticaLambdaLoader`.
 
-Each of the above Log Streams were created by an AWS Lambda function invocation, 
-and will be rotated periodically. You can see the last ingestion time, which is 
-when AWS Lambda last pushed events into CloudWatch Logging.
-
-You can then review each log stream, and see events where your function simply 
-buffered a file, or where it performed a load.
-
-## DynamoDB tables
+### DynamoDB tables
 
 All data used to manage the lifecycle of data loads is stored in DynamoDB, and 
 the setup script automatically provisions the following tables:
@@ -309,6 +319,10 @@ the setup script automatically provisions the following tables:
 * LambdaVerticaBatchLoadConfig - Stores the configuration of how files in an S3 input prefix should be loaded into Vertica.
 * LambdaVerticaBatches - Stores the list of all historical and open batches that have been created. There will always be one open batch, and may be multiple closed batches per S3 input prefix from LambdaVerticaBatchLoadConfig.
 * LambdaVerticaProcessedFiles - Stores the list of all files entered into a batch, which is also used for deduplication of input files.
+
+![Dynamo DB Tables](DynamoTables.png)
+
+You can directly view and edit the tables contents via the DynamoDB console, if you so choose.
 
 *** IMPORTANT ***
 The tables used by this function are created with a max read & write per-second rate
@@ -326,42 +340,9 @@ and there will NOT be any database load done, nor will CloudWatch logs be genera
 The database password will be encrypted by the Amazon Key Management Service. Setup will create a 
 new Customer Master Key with an alias named `alias/LambaVerticaLoaderKey`.
 
-# Configuration Reference
 
-The following section provides guidance on the configuration options supported. 
-For items such as the batch size, please keep in mind that in Preview the Lambda 
-function timeout is 60 seconds. This means that your COPY command must complete 
-in less than ~ 50 seconds so that the Lambda function has time to complete writing 
-batch metadata. The COPY time will be a function of file size, the number of files 
-to be loaded, the size of the cluster, and how many other processes might be consuming 
-resource pool queue slots.
-
-Item | Required | Notes
-:---- | :--------: | :-----
-Enter the Region for the Redshift Load Configuration| Y | Any AWS Region from http://docs.aws.amazon.com/general/latest/gr/rande.html, using the short name (for example us-east-1 for US East 1)
-Enter the S3 Bucket & Prefix to watch for files | Y | An S3 Path in format <bucket name>/<prefix>. Prefix is optional
-Enter a Filename Filter Regex | N | A Regular Expression used to filter files which appeared in the input prefix before they are processed.
-Enter the Cluster Endpoint | Y | The Amazon Redshift Endpoint Address for the Cluster to be loaded.
-Enter the Cluster Port | Y | The port on which you have configured your Amazon Redshift Cluster to run.
-Enter the Database Name | Y | The database name in which the target table resides.
-Enter the Database Username | Y | The username which should be used to connect to perform the COPY. Please note that only table owners can perform COPY, so this should be the schema in which the target table resides.
-Enter the Database Password | Y | The password for the database user. Will be encrypted before storage in Dynamo DB.
-Enter the Table to be Loaded | Y | The Table Name to be loaded with the input data.
-Should the Table be Truncated before Load? (Y/N) | N | Option to truncate the table prior to loading. Use this option if you will subsequently process the input patch and only want to see 'new' data with this ELT process.
-Enter the Data Format (CSV or JSON) | Y | Whether the data format is Character Separated Values or JSON data (http://docs.aws.amazon.com/redshift/latest/dg/copy-usage_notes-copy-from-json.html).
-If CSV, Enter the CSV Delimiter | Yes if Data Format = CSV | Single character delimiter value, such as ',' (comma) or '|' (pipe).
-If JSON, Enter the JSON Paths File Location on S3 (or NULL for Auto) | Yes if Data Format = JSON | Location of the JSON paths file to use to map the file attributes to the database table. If not filled, the COPY command uses option 'json = auto' and the file attributes must have the same name as the column names in the target table.
-Enter the S3 Bucket for Redshift COPY Manifests | Y | The S3 Bucket in which to store the manifest files used to perform the COPY. Should not be the input location for the load.
-Enter the Prefix for Redshift COPY Manifests| Y | The prefix for COPY manifests.
-Enter the Prefix to use for Failed Load Manifest Storage | N | On failure of a COPY, you can elect to have the manifest file copied to an alternative location. Enter that prefix, which will be in the same bucket as the rest of your COPY manifests.
-Enter the Access Key used by Redshift to get data from S3 | Y | Amazon Redshift must provide credentials to S3 to be allowed to read data. Enter the Access Key for the Account or IAM user that Amazon Redshift should use.
-Enter the Secret Key used by Redshift to get data from S3 | Y | The Secret Key for the Access Key used to get data from S3. Will be encrypted prior to storage in DynamoDB.
-Enter the SNS Topic ARN for Failed Loads | N | If you want notifications to be sent to an SNS Topic on successful Load, enter the ARN here. This would be in format 'arn:aws:sns:<region>:<account number>:<topic name>.
-Enter the SNS Topic ARN for Successful Loads  | N | SNS Topic ARN for notifications when a batch COPY fails.
-How many files should be buffered before loading? | Y | Enter the number of files placed into the input location before a COPY of the current open batch should be performed. Recommended to be an even multiple of the number of CPU's in your cluster. You should set the multiple such that this count causes loads to be every 2-5 minutes.
-How old should we allow a Batch to be before loading (seconds)? | N | AWS Lambda will attempt to sweep out 'old' batches using this value as the number of seconds old a batch can be before loading. This 'sweep' is on every S3 event on the input location, regardless of whether it matches the Filename Filter Regex. Not recommended to be below 120.
-Additional Copy Options to be added | N | Enter any additional COPY options that you would like to use, as outlined at (http://docs.aws.amazon.com/redshift/latest/dg/r_COPY.html). Please also see http://blogs.aws.amazon.com/bigdata/post/Tx2ANLN1PGELDJU/Best-Practices-for-Micro-Batch-Loading-on-Amazon-Redshift for information on good practices for COPY options in high frequency load environments.
-
+----
+This Vertica Loader function is provided to you under the Amazon Softwre Licence. You are free to use it on AWS, and you are welcome (even encouraged) to make it better and contribute it back to the community.
 ----
 
 Copyright 2014-2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
