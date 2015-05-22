@@ -152,9 +152,9 @@ Do you want to get an email if the loader fails? Maybe you also want one every t
 Or, if you are very sophisticated, maybe you want to notify another application that the load has completed, or even trigger your own custom Lambda function to execute additional steps in your data load workflow?
 To receive SNS notifications for succeeded loads, failed loads, or both, log in to the AWS console, go to SNS and create appropriate 'Topics'. Note their Amazon Resource Names (ARN). 
 
-### Step 4 - Prepare the client to use for setting up your loading configurations
+### Step 4 - Prepare a client machine for running the setup tool.
 
-You will need a machine set up to run the setup and admin scripts. You can use an AWS EC2 instance, or an on-premise machine - doesn't matter. The instructions assume you are running RHEL/CentOS. 
+You will need a machine configured to run the setup and admin scripts. You can use an AWS EC2 instance, or an on-premise machine - it doesn't matter. The instructions assume you are running RHEL/CentOS. 
 
 Install 'git' and 'npm', if they're not already installed
 ```
