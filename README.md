@@ -5,22 +5,22 @@ If so, this AWS S3 loader for Vertica may be just the thing for you! It will aut
 
 Here are some of the things it can do:
 - Pick up source files based on S3 bucket/prefix and filename regex pattern
-- Configurable batching (multiple files can be batched into one COPY) 
+- Batch multiple files into one COPY based on configurable rules 
 - Customize load behavior using any of the many COPY options supported by Vertica. Some examples:
 	- use a FlexZone parser to handle a variety of file formats
 	- specify ON ANY NODE to balance parallel multi-file loads across the cluster
-	- use DIRECT load to bypass WOS when you know the batches are large
+	- use DIRECT when you know the batches are large and you want to bypass WOS
 - Simultaneously load files to multiple clusters. For each cluster you can specify:
-	- target table name (can be regular or Flex table)
-	- Optional SQL statement to run before the load (e.g. truncate table, swap partitions, etc.) 
-	- Optional SQL statement to run after the load (e.g. compute flex table keys and view, clean or transform data, etc.)
-- Subscribe to recieve batch success/fail notifications (by email or other delivery) 
-- Monitor loads using AWS Cloudwatch
-- Supports both Vertica-On-Demand clusters and self managed Vertica clusters on AWS
+	- target table name (regular table or Flex table)
+	- optional SQL statement to run before the load (e.g. truncate table, swap partitions, etc.) 
+	- optional SQL statement to run after the load (e.g. compute flex table keys/view, transform & move data, etc.)
+- Subscribe to recieve load success/fail notifications (by email or other delivery) 
+- Monitor load logs and metrics using AWS Cloudwatch
+- Supports both Vertica-On-Demand clusters and self managed Vertica clusters
 
-The Vertica loader runs within AWS Lambda, which provides an event-driven, zero-administration compute service. "It allows developers to create applications that are automatically hosted and scaled, while providing a fine-grained pricing structure. With AWS Lambda you get automatic scaling, high availability, and built in Amazon CloudWatch Logging." 
+The Vertica loader uses AWS Lambda, which provides a scalable, zero-administration, event-driven compute service.  
 
-This Vertica loader was inspired by the AWS blog post: ["Zero Administration AWS Based Amazon Redshift Loader"](https://blogs.aws.amazon.com/bigdata/post/Tx24VJ6XF1JVJAA/A-Zero-Administration-Amazon-Redshift-Database-Loader). AWS generously make their code available under the [Amazon Software License](http://aws.amazon.com/asl/). 
+The creation of the Vertica loader was inspired by the AWS blog post: ["Zero Administration AWS Based Amazon Redshift Loader"](https://blogs.aws.amazon.com/bigdata/post/Tx24VJ6XF1JVJAA/A-Zero-Administration-Amazon-Redshift-Database-Loader). AWS generously make their code available under the [Amazon Software License](http://aws.amazon.com/asl/). 
 Our github repo - ["AWS-Lambda-Vertica-Loader"](https://github.com/rstrahan/aws-lambda-vertica-loader) - was initially forked from the AWS repo. *Thank you, AWS!*
 
 The architecture leverages several AWS services to great effect. It is fairly straightforward.
