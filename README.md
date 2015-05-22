@@ -219,9 +219,7 @@ NOTES
 * In the example above, we elected to rebuild flex keys and view on the table after each batch load. This way, if new columns appear in the incoming CSV files, they will be automatically added to the flex view.
 
 
-**You are now ready to go!** Simply place files that meet the configured format into 
-S3 at the location that you configured as the input location, and watch as AWS 
-Lambda loads them into your Vertica Cluster. 
+**You are now ready to go!** Copy correctly formatted files into the S3 input location, and they will be loaded into your Vertica Cluster. Watch as the Lambda console shows load charts and logs, as rows are added to your target tables, and as your inbox fills with email notifications confirming each complete load!
 
 ![Lambda Activity Charts](LambdaCharts.png)
 
@@ -338,7 +336,7 @@ new Customer Master Key with an alias named `alias/LambaVerticaLoaderKey`.
 
 
 ----
-*This Vertica Loader function is provided to you under the Amazon Softwre Licence. You are free to use it on AWS, and you are welcome (even encouraged) to make it better and contribute it back to the community.*
+*This Vertica Loader function is provided to you under the Amazon Software Licence. You are free to use it on AWS, and you are welcome (even encouraged) to make it better and contribute it back to the community.*
 
 Copyright 2014-2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
