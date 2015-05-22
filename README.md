@@ -1,28 +1,30 @@
-# A Zero Administration AWS Lambda Based HP Vertica Database Loader
+# An Automatic Vertica Database Loader for AWS
 
-Running your Vertica cluster(s) on AWS? Staging your source data files on S3?
-If so, this automatic loader may be just the thing for you! It will automatically load your newly created S3 files into target tables in one or more vertica clusters. 
+Are you using Amazon Web Services for your Vertica cluster(s)? Or are you using Vertica-On-Demand? 
+Are you staging your source data files on AWS S3 storage?
+If so, this AWS S3 loader for Vertica may be just the thing for you! It will automatically copy your newly created S3 files into target tables in one or more Vertica clusters. 
 
-Here are some of the features it provides:
-- match source files based on S3 bucket/folder and filename regex pattern
-- control batching of new files (based on file count or time window)
-- customise load using any of the many COPY options supported by Vertica (see [docs](http://my.vertica.com/docs/7.1.x/HTML/index.htm#Authoring/SQLReferenceManual/Statements/COPY/COPY.htm%3FTocPath%3DSQL%2520Reference%2520Manual%7CSQL%2520Statements%7CCOPY%7C_____0)). For example, you can:
+Here are some of the things it can do:
+- pick up source files based on S3 bucket/prefix and filename regex pattern
+- configurable batching (multiple files can be batched into one COPY) 
+- customize load behavior using any of the many [COPY options](http://my.vertica.com/docs/7.1.x/HTML/index.htm#Authoring/SQLReferenceManual/Statements/COPY/COPY.htm%3FTocPath%3DSQL%2520Reference%2520Manual%7CSQL%2520Statements%7CCOPY%7C_____0) supported by Vertica. Some examples:
 	- use a [FlexZone parser](http://my.vertica.com/docs/7.1.x/HTML/index.htm#Authoring/FlexTables/FlexParsersReference.htm%3FTocPath%3DFlex%2520Tables%2520Guide%7CFlex%2520Parsers%2520Reference%7C_____0) to handle a variety of file formats
 	- specify ON ANY NODE to balance parallel multi-file loads across the cluster
-	- control load mode - use DIRECT to load bypass WOS when you know the batches are large
-- simultaneously load the files to multiple clusters. For each cluster you can specify:
+	- use DIRECT to load bypass WOS when you know the batches are large
+- simultaneously load files to multiple clusters. For each cluster you can specify:
 	- target table name (can be regular or Flex table)
 	- Optional SQL statement to run before the load (e.g. truncate table, swap partitions, etc.) 
 	- Optional SQL statement to run after the load (e.g. compute flex table keys and view, clean or transform data, etc.)
-- subscribe to recieve notifications (by email or other delivery) letting you know which commands were run, and if everything worked, or not. 
+- subscribe to recieve batch success/fail notifications (by email or other delivery) 
+- monitor loads using AWS Cloudwatch
 
-The HP Vertica loader function runs within the AWS Lambda service. *[AWS Lambda](http://aws.amazon.com/lambda) provides an event-driven, zero-administration compute service. It allows developers to create applications that are automatically 
-hosted and scaled, while providing you with a fine-grained pricing structure. With AWS Lambda you get automatic scaling, high availability, and built in Amazon CloudWatch Logging."* 
+The Vertica loader runs within the AWS Lambda service, which provides an event-driven, zero-administration compute service. "It allows developers to create applications that are automatically hosted and scaled, while providing a fine-grained pricing structure. With AWS Lambda you get automatic scaling, high availability, and built in Amazon CloudWatch Logging." 
 
-The code is based on the [Zero Administration AWS Based Amazon Redshift Loader](https://blogs.aws.amazon.com/bigdata/post/Tx24VJ6XF1JVJAA/A-Zero-Administration-Amazon-Redshift-Database-Loader) function, generously published by AWS under the [Amazon Software License](http://aws.amazon.com/asl/). The ["AWS-Lambda-Redshift-Loader" github repo](https://github.com/awslabs/aws-lambda-redshift-loader), was forked and modified to create the ["AWS-Lambda-Vertica-Loader" repo](https://github.com/rstrahan/aws-lambda-vertica-loader).
-Thank you, AWS!
+This loader function was inspired by the ["Zero Administration AWS Based Amazon Redshift Loader"](https://blogs.aws.amazon.com/bigdata/post/Tx24VJ6XF1JVJAA/A-Zero-Administration-Amazon-Redshift-Database-Loader), generously published by AWS under the [Amazon Software License](http://aws.amazon.com/asl/). 
+Our github repository - ["AWS-Lambda-Vertica-Loader"](https://github.com/rstrahan/aws-lambda-vertica-loader) - was initially forked from the AWSLabs [AWS-Lambda-Redshift-Loader](https://github.com/awslabs/aws-lambda-redshift-loader) repo, and subsequently modified to support Vertica and to add a number of handy features. *Thank you, AWS!*
 
-The architecture is fairly straightforward.
+The architecture leverages several AWS services to great effect. It is fairly straightforward.
+
 - [AWS S3](http://aws.amazon.com/s3) provides source file repository
 - [AWS Lambda](http://aws.amazon.com/lambda) is used to run our Vertica Loader function when new files are added to S3
 - [AWS DynamoDB](http://aws.amazon.com/dynamodb) is used to store load configurations (passwords are encrypted!), and to track status of batches and individual files
@@ -31,40 +33,42 @@ The architecture is fairly straightforward.
 
 ![Loader Architecture](Architecture.png)
 
-## Instructions for getting started
+## Getting everything set up
 
-### Step 1 - Prepare your HP Vertica Cluster(s)
+There are a few setup steps before you can get started loading files. Don't worry - it's not too hard, and you only need to do it once. Here are the steps. 
+
+### Step 1 - Prepare your Vertica Cluster(s)
+
+Do the following for each cluster you want to load. By the way, you will have lots of flexibility for how you later configure the mapping between source S3 locations/files and the target tables/clusters.  You can load the same sets of files to multiple clusters, or different sets of files to one cluster, or multiple sets of files to multiple clusters, or... well, you get the idea. 
 
 #### Network access
-Our function running within the AWS Lambda compute service, must be able to connect to your Vertica cluster as a JDBC client. In the future, per AWS, AWS Lambda will support presenting the service as though it was inside your own VPC, but for now your Vertica cluster must be reachable from any internet address, on tcp port 5433. 
-You must configure your VPC / ACLs / Security Groups accordingly.
+The AWS Lambda service running our loader function must be able to connect to your Vertica cluster over JDBC. In the future, per AWS, AWS Lambda will support presenting the service as though it was inside your own VPC, but for now your Vertica cluster must be reachable from any internet address. Your cluster access is likely set up this way by default, but if not, you must configure your VPC / ACLs / Security Groups accordingly.
 
 #### S3 bucket mounts
-To enable Vertica to load files from an S3 bucket, the bucket must first be mounted to a path on the Vertica node's filesystem. 
-To enable all cluster nodes to participate in parallel loading of a batch containing multiple files from an S3 bucket (*ON ANY NODE* option), the bucket must be mounted to the same path on all cluster nodes.
+Vertica needs access to the files in your S3 bucket(s), and so your bucket(s) must first be mounted to a path on the Vertica node's filesystem. 
+If you want to use the 'ON ANY NODE' load option to enable balanced parallel loading, then the bucket will need to be mounted to the same path *on all cluster nodes*.
 
-If you are using [Vertica-On-Demand](http://www.vertica.com/hp-vertica-products/ondemand/) then follow the VOD instructions for setting up S3 bucket access.
+If you are using [Vertica-On-Demand](http://www.vertica.com/hp-vertica-products/ondemand/) then follow the S3 mapping instructions in the [VOD Loading Guide](https://saas.hp.com/sites/default/files/resources/files/HP_Vertica_OnDemand_LoadingDataGuide.pdf#page=6). Your buckets will be mounted on each node to the path /VOD_<bucket>.  You can now skip to the next step.
 
-Otherwise, you will need to mount S3 buckets on each node, using the s3fs command.
+If you manage your own vertica cluster, then you will need to use s3fs to mount your S3 buckets.
 
 The s3fs utiliy is pre-installed on cluster nodes built using the latest [HP Vertica AMI](https://aws.amazon.com/marketplace/pp/B00KY7A4OQ/ref=srh_res_product_title?ie=UTF8&sr=0-2&qid=1432228609686).  
+If you didn't use the AMI, then you might need to install s3fs - [directions](http://tecadmin.net/mount-s3-bucket-centosrhel-ubuntu-using-s3fs/)).
 
-If s3fs is not already installed on your Vertica nodes then you must install it to proceed: [directions](http://tecadmin.net/mount-s3-bucket-centosrhel-ubuntu-using-s3fs/)).
+Now set up your bucket mount on each node as follows:
 
-Once s3fs is installed, then set up your bucket mount on each node as follows:
-
-1. Create the /etc/passwd-s3fs file containing your AWS access key id, and secret key, separated by a ':' on a single line. E.g.:
+1. Create the /etc/passwd-s3fs file
 ```
 # sudo echo AWS_ACCESS_KEY_ID:AWS_SECRET_ACCESS_KEY > ~/.passwd-s3fs
 # sudo chmod 640 ~/.passwd-s3fs
 ```
-2. Create the mount point directory where we'll mount the bucket - /mnt/s3/<bucketname>
+2. Create the mount point directory where we'll mount the bucket - /mnt/s3/<BUCKETNAME>
 ```
-sudo mkdir -p /mnt/s3/<bucketname>
+sudo mkdir -p /mnt/s3/<BUCKETNAME>
 ```
-3. Add s3fs entry to /etc/fstab using your own bucket name.
+3. Add s3fs entry to /etc/fstab
 ```
-s3fs#<bucketname>           /mnt/s3/<bucketname>        fuse    allow_other     0 0
+s3fs#<BUCKETNAME>           /mnt/s3/<BUCKETNAME>        fuse    allow_other     0 0
 ```
 4. And finally, mount the bucket
 ```
@@ -73,34 +77,32 @@ sudo mount -a
 
 #### Database Tables and Users
 
-You need to precreate the tables you will be loading. 
+You need to make sure each table you want to load exists. 
 
 You can use a regular Vertica column store table, assuming you know the structure of the files that you will be loading. Verify that you have the columns all correctly specified with data types matching the columns in the incoming files.
 
-Or, you can use a Flex table if you prefer. With flex tables, you don't need to specify the columns up front - Vertica will automatically determine the column structure from your data files (CSV headers, JSON keys, etc.), and can even add new columns on the fly. If you are not familiar with FlexZone, read some interesting blogs about it [here](http://www.vertica.com/tag/flexzone/). It is very cool - especially if the structure of your files is not known or can change. 
+OR you can use a Flex table if you prefer. With Flex tables, you don't need to define the columns up front - Vertica will automatically determine the structure from your data files (CSV headers, JSON keys, etc.), and will even add new columns on the fly if they appear in the data. If you are not familiar with FlexZone, read these interesting blogs about it [here](http://www.vertica.com/tag/flexzone/). It is very cool! 
 
-You might want to create a new Vertica user for our Lambda function to use. Give this user a complex password, and the minimum set of privileges necessary to load the table (and to run any pre or post load SQL statements that you intend to configure). Or, you could throw caution to the wind, and let Lambda connect as dbadmin. You decide.  
+You might want to create a new Vertica user for our loader function to use. Give this user a complex password and the minimum set of privileges necessary. Or, you could throw caution to the wind, and just let Lambda connect as dbadmin! It's your decision.
 
-## Step 2 - Setup AWS Lambda Function
+### Step 2 - Install Lambda Function and Execution Roles in AWS
 
-Create the Lambda function
+Login to the [AWS console](https://console.aws.amazon.com/console/home), then:
 
+#### Create the Lambda function & role
 1.	Go to the AWS Lambda Console in the same region as your S3 bucket and HP Vertica cluster.
 2.	Select Create a Lambda function and enter the name MyVerticaDBLoader (for example).
-3.	Under Code entry type select Upload a zip file and upload the [AWSLambdaVerticaLoader-1.0.0.zip](https://github.com/rstrahan/aws-lambda-vertica-loader/blob/master/dist/AWSLambdaVerticaLoader-1.0.0.zip) from the dist folder
-4.	Use the default values of index.js for the filename and handler for the handler.
-5.	Follow the wizard for creating the AWS Lambda Execution Role. NOTE: You will need IAM privileges to create a new role - you may need your AWS administrator to help with this step if you don't have the required access. Give your new role a sensible name, like 'Lambda_VerticaDB_Loader_Role' (for example). 
+3.	Under 'Code entry type' select 'Upload a zip file' and upload  [AWSLambdaVerticaLoader-1.0.0.zip](https://github.com/rstrahan/aws-lambda-vertica-loader/blob/master/dist/AWSLambdaVerticaLoader-1.0.0.zip) (from the 'dist' folder of the github repo)
+4.	Use the default values of 'index.js' for the filename and 'handler' for the handler.
+5.	Follow the wizard for creating the AWS Lambda Execution Role. NOTE: You will need IAM privileges to create a new role - you may need your AWS administrator to help with this step if you don't have the required access. Give your new role a sensible name, like 'Lambda_VerticaDB_Loader_Role'. 
 5.	Use the max timeout for the function - 60(s).
 
-Configure a Lambda event source (delivers S3 PUT events to your AWS Lambda function)
+#### Configure a Lambda event source
 
-1.	On your newly deployed function, select Configure Event Source and select the bucket you want to use for input data. Select 'Put' as the notification type.
+1.	On your newly deployed function, select 'Configure Event Source' and select the S3 bucket you want to use for input data. Select 'Put' as the notification type.
 2.	Click Submit to save the changes.
 
-When you're done, you'll see that the AWS Lambda function is deployed and you 
-can submit test events and view the CloudWatch Logging log streams.
-
-## Step 3 - Edit the new AWS Lambda Execution Role
+#### Edit the new AWS Lambda Execution Role
 
 Add the IAM policy shown below to the role you (or your admin) created for Lambda in the previous step. If you followed my suggestion, this role will be called 'Lambda_VerticaDB_Loader_Role'. If you don't have IAM privileges, you will once again need to ask your AWS admin for help.
 
@@ -145,7 +147,7 @@ files to S3, and perform encryption with the AWS Key Management Service:
 }
 ```
 
-## Step 4 - (Optional) Create SNS Notification Topics
+### Step 3 - (Optional) Create SNS Notification Topics
 This function can send notifications on completion of batch processing. Using SNS, 
 you can then receive notifications through email and HTTP Push to an application, 
 or put them into a queue for later processing. You can even invoke additional Lambda
@@ -153,7 +155,7 @@ functions to complete your data load workflow using an SNS Event Source for anot
 AWS Lambda function. To receive SNS notifications for succeeded 
 loads, failed loads, or both, create SNS Topics and take note of their Amazon Resource Notations (ARN). 
 
-## Step 5 - Setup client machine, used for configuration and administration 
+### Step 4 - Setup client machine, used for configuration and administration 
 
 You will need a machine set up to run the setup and admin scripts. The instructions below assume you will use a RHEL/CentOS machine. You can use an AWS EC2 instance, or an on-premise machine - doesn't matter. 
 
@@ -188,7 +190,7 @@ an environment variable ```AWS_REGION``` to the desired location.
 ```export AWS_REGION=us-east-1```
 
 
-## Step 6 - Finally! Entering the Configuration
+### Step 5 - Finally! Entering the Configuration
 Now you are ready to create a configuration which tells the function how and if files should be loaded from S3. 
 
 Run the setup.js script by entering ```node setup.js```. The script asks questions 
