@@ -208,7 +208,7 @@ Enter the SNS Topic ARN for Failed Loads [Optional] > arn:aws:sns:us-east-1:4828
 Creating Tables in Dynamo DB if Required
 Configuration for bstrahan/db_ingest successfully written in us-east-1
 ```
-Some of the questions have default answers, shown within square brackets. If you are happy with the default, just hit enter. If you find yourself running the setup tool a lot, you can supply your own default values by editing the file defaults_custom.js, and adding in your own default values.
+Some of the questions have default answers, shown within square brackets. If you are happy with the default, just hit enter. If you find yourself running the setup tool a lot, you can supply your own default values in the file 'defaults_custom.js'.
 
 NOTES
 
