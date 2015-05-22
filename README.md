@@ -48,14 +48,14 @@ The AWS Lambda service running our loader function must be able to connect to yo
 #### S3 bucket mounts
 Vertica needs access to the files in your S3 bucket(s), and so your bucket(s) must first be mounted to a path on the Vertica node's filesystem. In fact, it should be mounted to the same path *on all cluster nodes*, so that you can use the 'ON ANY NODE' option to enable balanced parallel loading.
 
-If you are using [Vertica-On-Demand](http://www.vertica.com/hp-vertica-products/ondemand/) then follow the S3 mapping instructions in the [VOD Loading Guide](https://saas.hp.com/sites/default/files/resources/files/HP_Vertica_OnDemand_LoadingDataGuide.pdf#page=6). Your buckets will be mounted on each node to the path /VOD_BUCKETNAME.  You can now skip to the next step.
+If you are using [Vertica-On-Demand](http://www.vertica.com/hp-vertica-products/ondemand/) then follow the S3 mapping instructions in the [VOD Loading Guide](https://saas.hp.com/sites/default/files/resources/files/HP_Vertica_OnDemand_LoadingDataGuide.pdf#page=6). Your buckets will be mounted on each node to the path /VOD_BUCKETNAME.  You can skip to the next section.
 
 If you manage your own vertica cluster, then you will need to use s3fs to mount your S3 buckets.
 
 The s3fs utiliy is pre-installed on cluster nodes built using the latest [HP Vertica AMI](https://aws.amazon.com/marketplace/pp/B00KY7A4OQ/ref=srh_res_product_title?ie=UTF8&sr=0-2&qid=1432228609686).  
-If you didn't use the AMI, then you might need to install s3fs - [directions](http://tecadmin.net/mount-s3-bucket-centosrhel-ubuntu-using-s3fs/)).
+If you didn't use the AMI, then you might need to install s3fs - [directions](http://tecadmin.net/mount-s3-bucket-centosrhel-ubuntu-using-s3fs/).
 
-Now set up your bucket mount on each node as follows:
+Set up your bucket mount on each node as follows:
 
 1. Create the /etc/passwd-s3fs file
 ```
