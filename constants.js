@@ -30,7 +30,30 @@ batchStatusGSI = 'LambdaVerticaBatchStatus';
 filesTable = 'LambdaVerticaProcessedFiles';
 conditionCheckFailed = 'ConditionalCheckFailedException';
 provisionedThroughputExceeded = 'ProvisionedThroughputExceededException';
+
+/* defaults for setup.js */
+REQD_BLANK = 'Reqd.';
+OPTIONAL_BLANK = 'Optional';
+
+dfltRegion = 'us-east-1';
+dfltS3Prefix = REQD_BLANK ;
 dfltS3MountDir = '/mnt/s3/';
+dfltFilenameFilter = '.*\\.csv';
+dfltClusterEndpoint = REQD_BLANK ;
+dfltClusterPort = '5433';
+dfltUserName = REQD_BLANK ;
+dfltUserPwd = REQD_BLANK ;
+dfltTable = REQD_BLANK ;
+dfltCopyOptions = OPTIONAL_BLANK ;
+dfltPreLoadStatement = OPTIONAL_BLANK ;
+dfltPostLoadStatement = OPTIONAL_BLANK ;
+dfltBatchSize = '1';
+dfltBatchTimeoutSecs = '30';
+dfltFailureTopic = OPTIONAL_BLANK ;
+dfltSuccessTopic = OPTIONAL_BLANK ;
+
+
+
 INVALID_ARG = -1;
 ERROR = -1;
 OK = 0;

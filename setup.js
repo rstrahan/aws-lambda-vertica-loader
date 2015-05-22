@@ -24,6 +24,8 @@ var pjson = require('./package.json');
 var readline = require('readline');
 var aws = require('aws-sdk');
 require('./constants');
+require('./defaults');
+require('./defaults_custom');
 var common = require('./common');
 var async = require('async');
 var uuid = require('node-uuid');
@@ -59,7 +61,10 @@ var rl = readline.createInterface({
 var qs = [];
 
 q_region = function(callback) {
-	rl.question('Enter the Region for the Configuration (Reqd.) > ', function(answer) {
+	rl.question('Enter the Region for the Configuration [' + dfltRegion + '] > ', function(answer) {
+                if (common.blank(answer) === null) {
+                        answer = dfltRegion;
+                } 
 		if (common.blank(answer) !== null) {
 			common.validateArrayContains([ "ap-northeast-1", "ap-southeast-1",
 					"ap-southeast-2", "eu-central-1", "eu-west-1", "sa-east-1",
@@ -81,8 +86,10 @@ q_region = function(callback) {
 };
 
 q_s3Prefix = function(callback) {
-	rl.question('Enter the S3 Bucket & Prefix to watch for files (Reqd.) > ', function(
-			answer) {
+	rl.question('Enter the S3 Bucket & Prefix to watch for files [' + dfltS3Prefix + '] > ', function( answer) {
+                if (common.blank(answer) === null) {
+                        answer = dfltS3Prefix;
+                } 
 		common.validateNotNull(answer,
 				'You Must Provide an S3 Bucket Name, and optionally a Prefix',
 				rl);
@@ -110,7 +117,7 @@ q_s3Prefix = function(callback) {
 
 q_s3MountDir = function(callback) {
         rl.question('Enter the path to the mounted S3 bucket on Vertica nodes [' + dfltS3MountDir + ']> ', function(answer) {
-                if (answer === '') {
+                if (common.blank(answer) === null) {
                         answer = dfltS3MountDir ;
                 }
                 dynamoConfig.Item.s3MountDir = {
@@ -121,7 +128,12 @@ q_s3MountDir = function(callback) {
 };
 
 q_filenameFilter = function(callback) {
-	rl.question('Enter a Filename Filter Regex > ', function(answer) {
+	rl.question('Enter a Filename Filter Regex [' + dfltFilenameFilter + ']> ', function(answer) {
+                if (common.blank(answer) === null) {
+                        answer = dfltFilenameFilter ;
+                }
+		// replace double \\ with single
+		answer = answer.replace("\\\\","\\") ;
 		if (common.blank(answer) !== null) {
 			dynamoConfig.Item.filenameFilterRegex = {
 				S : answer
@@ -132,7 +144,10 @@ q_filenameFilter = function(callback) {
 };
 
 q_clusterEndpoint = function(callback) {
-	rl.question('Enter the Vertica Cluster Endpoint (Public IP or DNS name) (Reqd.) > ', function(answer) {
+	rl.question('Enter the Vertica Cluster Endpoint (Public IP or DNS name) [' + dfltClusterEndpoint + '] > ', function(answer) {
+                if (common.blank(answer) === null) {
+                        answer = dfltClusterEndpoint ;
+                }
 		common.validateNotNull(answer, 'You Must Provide a Vertica Cluster Endpoint',
 				rl);
 		dynamoConfig.Item.loadClusters.L[0].M.clusterEndpoint = {
@@ -143,10 +158,10 @@ q_clusterEndpoint = function(callback) {
 };
 
 q_clusterPort = function(callback) {
-	rl.question('Enter the Vertica Cluster Port [5433]> ', function(answer) {
-		if (answer === '') { 
-			answer = '5433' 
-		}
+	rl.question('Enter the Vertica Cluster Port [' + dfltClusterPort + ']> ', function(answer) {
+                if (common.blank(answer) === null) {
+                        answer = dfltClusterPort ;
+                }
 		dynamoConfig.Item.loadClusters.L[0].M.clusterPort = {
 			N : '' + common.getIntValue(answer, rl)
 		};
@@ -155,7 +170,10 @@ q_clusterPort = function(callback) {
 };
 
 q_userName = function(callback) {
-	rl.question('Enter the Vertica Database Username (Reqd.) > ', function(answer) {
+	rl.question('Enter the Vertica Database Username [' + dfltUserName + '] > ', function(answer) {
+                if (common.blank(answer) === null) {
+                        answer = dfltUserName ;
+                }
 		common.validateNotNull(answer, 'You Must Provide a Username', rl);
 		dynamoConfig.Item.loadClusters.L[0].M.connectUser = {
 			S : answer
@@ -165,9 +183,11 @@ q_userName = function(callback) {
 };
 
 q_userPwd = function(callback) {
-	rl.question('Enter the Vertica Database Password (Reqd.) > ', function(answer) {
+	rl.question('Enter the Vertica Database Password [' + dfltUserPwd + '] > ', function(answer) {
+                if (common.blank(answer) === null) {
+                        answer = dfltUserPwd ;
+                }
 		common.validateNotNull(answer, 'You Must Provide a Password', rl);
-
 		kmsCrypto.encrypt(answer, function(err, ciphertext) {
 			dynamoConfig.Item.loadClusters.L[0].M.connectPassword = {
 				S : kmsCrypto.toLambdaStringFormat(ciphertext)
@@ -180,7 +200,10 @@ q_userPwd = function(callback) {
 
 
 q_table = function(callback) {
-	rl.question('Enter the Table to be Loaded (Reqd.) > ', function(answer) {
+	rl.question('Enter the Table to be Loaded [' + dfltTable + '] > ', function(answer) {
+                if (common.blank(answer) === null) {
+                        answer = dfltTable ;
+                }
 		common.validateNotNull(answer, 'You Must Provide a Table Name', rl);
 		dynamoConfig.Item.loadClusters.L[0].M.targetTable = {
 			S : answer
@@ -190,7 +213,10 @@ q_table = function(callback) {
 };
 
 q_copyOptions = function(callback) {
-	rl.question('Load Options - COPY table FROM files [*options*] (Optional)> ', function(answer) {
+	rl.question('Load Options - COPY table FROM files [*options*] [' + dfltCopyOptions + ']> ', function(answer) {
+                if (common.blank(answer) === null) {
+                        answer = dfltCopyOptions ;
+                }
 		if (common.blank(answer) !== null) {
 			dynamoConfig.Item.copyOptions = {
 				S : answer
@@ -202,72 +228,67 @@ q_copyOptions = function(callback) {
 
 
 q_preLoadStatement = function(callback) {
-	rl.question('Enter SQL statement to run before the load (Optional)> ',
-			function(answer) {
-		                if (common.blank(answer) !== null) {
-					dynamoConfig.Item.loadClusters.L[0].M.preLoadStatement = {
-						S : answer
-					};
-                		}
-				callback(null);
-			});
+	rl.question('Enter SQL statement to run before the load [' + dfltPreLoadStatement + ']> ', function(answer) {
+                if (common.blank(answer) === null) {
+                        answer = dfltPreLoadStatement ;
+                }
+                if (common.blank(answer) !== null) {
+			dynamoConfig.Item.loadClusters.L[0].M.preLoadStatement = {
+				S : answer
+			};
+      		}
+		callback(null);
+	});
 };
 
 q_postLoadStatement = function(callback) {
-	rl.question('Enter SQL statement to run after the load (Optional)> ',
-			function(answer) {
-		                if (common.blank(answer) !== null) {
-					dynamoConfig.Item.loadClusters.L[0].M.postLoadStatement = {
-						S : answer
-					};
-                		}
-				callback(null);
-			});
+	rl.question('Enter SQL statement to run after the load [' + dfltPostLoadStatement + ']> ', function(answer) {
+                if (common.blank(answer) === null) {
+                        answer = dfltPostLoadStatement ;
+                }
+                if (common.blank(answer) !== null) {
+			dynamoConfig.Item.loadClusters.L[0].M.postLoadStatement = {
+				S : answer
+			};
+       		}
+		callback(null);
+	});
 };
 
 
 q_batchSize = function(callback) {
-	rl.question('How many files should be buffered before loading? > ',
-			function(answer) {
-				if (common.blank(answer) !== null) {
-					dynamoConfig.Item.batchSize = {
-						N : '' + common.getIntValue(answer, rl)
-					};
-				}
-				callback(null);
-			});
+	rl.question('How many files should be buffered before loading? [' + dfltBatchSize + '] > ', function(answer) {
+                if (common.blank(answer) === null) {
+                        answer = dfltBatchSize ;
+                }
+		if (common.blank(answer) !== null) {
+			dynamoConfig.Item.batchSize = {
+				N : '' + common.getIntValue(answer, rl)
+			};
+		}
+		callback(null);
+	});
 };
 
 q_batchTimeoutSecs = function(callback) {
-	rl
-			.question(
-					'How old should we allow a Batch to be before loading (seconds)? > ',
-					function(answer) {
-						if (common.blank(answer) !== null) {
-							dynamoConfig.Item.batchTimeoutSecs = {
-								N : '' + common.getIntValue(answer, rl)
-							};
-						}
-						callback(null);
-					});
-};
-
-
-q_failureTopic = function(callback) {
-	rl.question('Enter the SNS Topic ARN for Failed Loads (Optional) > ',
-			function(answer) {
-				if (common.blank(answer) !== null) {
-					dynamoConfig.Item.failureTopicARN = {
-						S : answer
-					};
-				}
-				callback(null);
-			});
+	rl.question('How old should we allow a Batch to be before loading (seconds)? [' + dfltBatchTimeoutSecs + ']> ', function(answer) {
+                if (common.blank(answer) === null) {
+                        answer = dfltBatchTimeoutSecs ;
+                }
+		if (common.blank(answer) !== null) {
+			dynamoConfig.Item.batchTimeoutSecs = {
+				N : '' + common.getIntValue(answer, rl)
+			};
+		}
+		callback(null);
+	});
 };
 
 q_successTopic = function(callback) {
-	rl.question('Enter the SNS Topic ARN for Successful Loads (Optional) > ', function(
-			answer) {
+	rl.question('Enter the SNS Topic ARN for Successful Loads [' + dfltSuccessTopic + '] > ', function( answer) {
+                if (common.blank(answer) === null) {
+                        answer = dfltSuccessTopic ;
+                }
 		if (common.blank(answer) !== null) {
 			dynamoConfig.Item.successTopicARN = {
 				S : answer
@@ -276,6 +297,21 @@ q_successTopic = function(callback) {
 		callback(null);
 	});
 };
+
+q_failureTopic = function(callback) {
+	rl.question('Enter the SNS Topic ARN for Failed Loads [' + dfltFailureTopic + '] > ', function(answer) {
+                if (common.blank(answer) === null) {
+                        answer = dfltFailureTopic ;
+                }
+		if (common.blank(answer) !== null) {
+			dynamoConfig.Item.failureTopicARN = {
+				S : answer
+			};
+		}
+		callback(null);
+	});
+};
+
 
 last = function(callback) {
 	rl.close();
@@ -301,6 +337,7 @@ exports.setup = setup;
 
 qs.push(q_region);
 qs.push(q_s3Prefix);
+qs.push(q_s3MountDir);
 qs.push(q_filenameFilter);
 qs.push(q_clusterEndpoint);
 qs.push(q_clusterPort);

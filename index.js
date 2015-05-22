@@ -538,14 +538,14 @@ exports.handler =
 						for (var i = 0; i < batchEntries.length; i++) {
 							// copyPath used for Vertica loads - S3 bucket must be mounted on cluster servers 
 							// as: serverS3BucketMountDir/<bucketname> (see constants.js)
-							var copyPathItem = "'" + config.s3MountDir + batchEntries[i].replace('+', ' ').replace('%2B', '+') + "'";
+							var copyPathItem = "'" + config.s3MountDir.S + batchEntries[i].replace('+', ' ').replace('%2B', '+') + "'";
 							if (!copyPathList) {
                                                                 copyPathList = copyPathItem;
 							} else {
 								copyPathList += ', ' + copyPathItem;
 							}
 						}
-						exports.loadVertica(undefined, config, thisBatchId, s3Info, copyPathList);
+						exports.loadVertica(config, thisBatchId, s3Info, copyPathList);
 					};
 
 			/**

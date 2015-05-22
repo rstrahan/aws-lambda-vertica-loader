@@ -13,8 +13,6 @@
  * Derivative created by HP, to leverage and extend the function framework to provide automatic loading from S3, via Lambda, to the HP Vertica Analytic Database platform.
  */
 
-require('./defaults_custom');
-
 
 /* defaults for setup.js */
 REQD_BLANK = 'Reqd.';
@@ -34,6 +32,6 @@ dfltPreLoadStatement = OPTIONAL_BLANK ;
 dfltPostLoadStatement = OPTIONAL_BLANK ;
 dfltBatchSize = '1';
 dfltBatchTimeoutSecs = '30';
-dfltFailureTopic = OPTIONAL_BLANK ;
 dfltSuccessTopic = OPTIONAL_BLANK ;
+dfltFailureTopic = OPTIONAL_BLANK ;
 

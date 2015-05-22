@@ -10,6 +10,7 @@
 
 var async = require('async');
 require('./constants');
+require('./defaults');
 
 // function which creates a string representation of now suitable for use in S3
 // paths
@@ -306,7 +307,7 @@ exports.getBooleanValue = function(value) {
 
 /* validate that the provided value is not null/undefined */
 exports.validateNotNull = function(value, message, rl) {
-	if (!value || value === null || value === '') {
+	if (!value || value === null || value === '' || value === REQD_BLANK || value === OPTIONAL_BLANK ) {
 		rl.close();
 		console.log(message);
 		process.exit(INVALID_ARG);
@@ -315,7 +316,7 @@ exports.validateNotNull = function(value, message, rl) {
 
 /* turn blank lines read from STDIN to Null */
 exports.blank = function(value) {
-	if (value === '') {
+	if (value === '' || value === REQD_BLANK || value === OPTIONAL_BLANK ) {
 		return null;
 	} else {
 		return value;

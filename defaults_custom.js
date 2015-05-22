@@ -31,6 +31,6 @@
 //dfltPostLoadStatement = OPTIONAL_BLANK ;
 //dfltBatchSize = '1';
 //dfltBatchTimeoutSecs = '30';
-//dfltFailureTopic = OPTIONAL_BLANK ;
 //dfltSuccessTopic = OPTIONAL_BLANK ;
+//dfltFailureTopic = OPTIONAL_BLANK ;
 
