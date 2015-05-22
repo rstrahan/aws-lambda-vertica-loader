@@ -206,7 +206,7 @@ Enter the Vertica Database Password [Reqd.] > V3rt1caR0cks
 Enter the SNS Topic ARN for Successful Loads [Optional] > arn:aws:sns:us-east-1:4828661098765:LambdaDBLoadOK
 Enter the SNS Topic ARN for Failed Loads [Optional] > arn:aws:sns:us-east-1:4828661098765:LambdaDBLoadFAIL
 Creating Tables in Dynamo DB if Required
-Configuration for bstrahan/db_ingest successfully written in us-east-1
+Configuration for myBucket/db_ingest successfully written in us-east-1
 ```
 Some of the questions have default answers, shown within square brackets. If you are happy with the default, just hit enter. If you find yourself running the setup tool a lot, you can supply your own default values in the file 'defaults_custom.js'.
 
