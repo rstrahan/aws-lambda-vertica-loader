@@ -21,7 +21,7 @@ Here are some of the things it can do:
 The Vertica loader uses AWS Lambda, which provides a scalable, zero-administration, event-driven compute service.  
 
 The creation of the Vertica loader was inspired by the AWS blog post - [Zero Administration AWS Based Amazon Redshift Loader](https://blogs.aws.amazon.com/bigdata/post/Tx24VJ6XF1JVJAA/A-Zero-Administration-Amazon-Redshift-Database-Loader). AWS generously make their code available under the Amazon Software License. 
-Our github repo - ["AWS-Lambda-Vertica-Loader"](https://github.com/rstrahan/aws-lambda-vertica-loader) - was initially forked from the AWS repo. *Thank you, AWS!*
+Our github repo - ["AWS-Lambda-Vertica-Loader"](https://github.com/rstrahan/aws-lambda-vertica-loader) - was forked from the AWS repo. The code and documentation for this Vertica loader, including some of the text and diagrams used here, is very much a derivitive work. *Thank you, AWS!*
 
 The straightforward architecture leverages several AWS services:
 
