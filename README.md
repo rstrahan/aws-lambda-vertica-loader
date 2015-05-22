@@ -5,7 +5,7 @@ If so, this AWS S3 loader for Vertica may be just the thing for you! It will aut
 
 Here are some of the things it can do:
 - Pick up source files based on S3 bucket/prefix and filename regex pattern
-- Batch multiple files into one COPY based on configurable rules 
+- Batch multiple files into COPY statements based on configurable rules 
 - Customize load behavior using any of the many COPY options supported by Vertica. Some examples:
 	- use a FlexZone parser to handle a variety of file formats
 	- specify ON ANY NODE to balance parallel multi-file loads across the cluster
