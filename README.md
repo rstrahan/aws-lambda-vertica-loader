@@ -171,7 +171,7 @@ npm install
 npm install aws-sdk
 ```
 Configure the AWS SDK. 
-As a minimum you just need to create a file `~/.aws/credentials` containing your AWS access key id and secret key:
+As a minimum you need to create a file `~/.aws/credentials` containing your AWS access key id and secret key:
 ```
 [default]
 aws_access_key_id = AWS_ACCESS_KEY_ID
@@ -225,7 +225,7 @@ Lambda loads them into your Vertica Cluster.
 
 ![Lambda Activity Charts](LambdaCharts.png)
 
-This service is cheap but it's not free. AWS will charge you by the number of input files that are processed, plus a small charge for DynamoDB. But you now have a highly available and scalable load framework which doesn't require you manage servers!
+This service is cheap but it's not free. AWS will charge you by the number of input files that are processed, plus a small charge for DynamoDB. But you now have a highly available and scalable load framework which doesn't require you to manage servers!
 
 
 ## Additional tools and tips 
