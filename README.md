@@ -154,7 +154,7 @@ To receive SNS notifications for succeeded loads, failed loads, or both, log in 
 
 ### Step 4 - Prepare a client machine for running the setup tool.
 
-You will need a machine configured to run the setup and admin scripts. You can use an AWS EC2 instance, or an on-premise machine - it doesn't matter. The instructions assume you are running RHEL/CentOS. 
+You will need a machine to run the setup script. You can use an AWS EC2 instance, or an on-premise machine - it doesn't matter. The instructions assume you are running RHEL/CentOS. 
 
 Install 'git' and 'npm', if they're not already installed
 ```
@@ -171,7 +171,7 @@ npm install
 npm install aws-sdk
 ```
 Configure the AWS SDK. 
-As a minimum you just need to create a file `~/.aws/credentials` containing your AWS access key and secret key:
+As a minimum you just need to create a file `~/.aws/credentials` containing your AWS access key id and secret key:
 ```
 [default]
 aws_access_key_id = AWS_ACCESS_KEY_ID
