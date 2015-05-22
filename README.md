@@ -1,6 +1,6 @@
 # An Automatic Vertica Database Loader for AWS
 
-Are you using Amazon Web Services for your Vertica cluster(s)? Or are you using Vertica-On-Demand? 
+Are you using Amazon Web Services for your Vertica cluster(s)? Maybe you are using Vertica-On-Demand? 
 Are you staging your source data files on AWS S3 storage?
 If so, this AWS S3 loader for Vertica may be just the thing for you! It will automatically copy your newly created S3 files into target tables in one or more Vertica clusters. 
 
@@ -342,8 +342,7 @@ new Customer Master Key with an alias named `alias/LambaVerticaLoaderKey`.
 
 
 ----
-This Vertica Loader function is provided to you under the Amazon Softwre Licence. You are free to use it on AWS, and you are welcome (even encouraged) to make it better and contribute it back to the community.
-----
+*This Vertica Loader function is provided to you under the Amazon Softwre Licence. You are free to use it on AWS, and you are welcome (even encouraged) to make it better and contribute it back to the community.*
 
 Copyright 2014-2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
