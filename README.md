@@ -1,27 +1,27 @@
-# An Automatic Vertica Database Loader for AWS
+# Automatic Vertica Database Loader for AWS S3
 
-Are you using Amazon Web Services for your Vertica cluster(s)? Maybe you are using Vertica-On-Demand? 
-Are you staging your source data files on AWS S3 storage?
-If so, this AWS S3 loader for Vertica may be just the thing for you! It will automatically copy your newly created S3 files into target tables in one or more Vertica clusters. 
+Are you using Amazon Web Services for your Vertica cluster(s)? Are you staging your source data files on AWS S3 storage?
+If so, this AWS S3 loader for Vertica may be just the thing for you! It will automatically copy files as they are created in S3  into target tables in one or more Vertica clusters. 
 
 Here are some of the things it can do:
-- pick up source files based on S3 bucket/prefix and filename regex pattern
-- configurable batching (multiple files can be batched into one COPY) 
-- customize load behavior using any of the many COPY options supported by Vertica. Some examples:
+- Pick up source files based on S3 bucket/prefix and filename regex pattern
+- Configurable batching (multiple files can be batched into one COPY) 
+- Customize load behavior using any of the many COPY options supported by Vertica. Some examples:
 	- use a FlexZone parser to handle a variety of file formats
 	- specify ON ANY NODE to balance parallel multi-file loads across the cluster
-	- use DIRECT to load bypass WOS when you know the batches are large
-- simultaneously load files to multiple clusters. For each cluster you can specify:
+	- use DIRECT load to bypass WOS when you know the batches are large
+- Simultaneously load files to multiple clusters. For each cluster you can specify:
 	- target table name (can be regular or Flex table)
 	- Optional SQL statement to run before the load (e.g. truncate table, swap partitions, etc.) 
 	- Optional SQL statement to run after the load (e.g. compute flex table keys and view, clean or transform data, etc.)
-- subscribe to recieve batch success/fail notifications (by email or other delivery) 
-- monitor loads using AWS Cloudwatch
+- Subscribe to recieve batch success/fail notifications (by email or other delivery) 
+- Monitor loads using AWS Cloudwatch
+- Supports both Vertica-On-Demand clusters and self managed Vertica clusters on AWS
 
-The Vertica loader runs within the AWS Lambda service, which provides an event-driven, zero-administration compute service. "It allows developers to create applications that are automatically hosted and scaled, while providing a fine-grained pricing structure. With AWS Lambda you get automatic scaling, high availability, and built in Amazon CloudWatch Logging." 
+The Vertica loader runs within AWS Lambda, which provides an event-driven, zero-administration compute service. "It allows developers to create applications that are automatically hosted and scaled, while providing a fine-grained pricing structure. With AWS Lambda you get automatic scaling, high availability, and built in Amazon CloudWatch Logging." 
 
-This loader function was inspired by the ["Zero Administration AWS Based Amazon Redshift Loader"](https://blogs.aws.amazon.com/bigdata/post/Tx24VJ6XF1JVJAA/A-Zero-Administration-Amazon-Redshift-Database-Loader), generously published by AWS under the [Amazon Software License](http://aws.amazon.com/asl/). 
-Our github repository - ["AWS-Lambda-Vertica-Loader"](https://github.com/rstrahan/aws-lambda-vertica-loader) - was initially forked from the AWSLabs [AWS-Lambda-Redshift-Loader](https://github.com/awslabs/aws-lambda-redshift-loader) repo, and subsequently modified to support Vertica and to add a number of handy features. *Thank you, AWS!*
+This Vertica loader was inspired by the AWS blog post: ["Zero Administration AWS Based Amazon Redshift Loader"](https://blogs.aws.amazon.com/bigdata/post/Tx24VJ6XF1JVJAA/A-Zero-Administration-Amazon-Redshift-Database-Loader). AWS generously make their code available under the [Amazon Software License](http://aws.amazon.com/asl/). 
+Our github repo - ["AWS-Lambda-Vertica-Loader"](https://github.com/rstrahan/aws-lambda-vertica-loader) - was initially forked from the AWS repo. *Thank you, AWS!*
 
 The architecture leverages several AWS services to great effect. It is fairly straightforward.
 
@@ -29,26 +29,25 @@ The architecture leverages several AWS services to great effect. It is fairly st
 - [AWS Lambda](http://aws.amazon.com/lambda) is used to run our Vertica Loader function when new files are added to S3
 - [AWS DynamoDB](http://aws.amazon.com/dynamodb) is used to store load configurations (passwords are encrypted!), and to track status of batches and individual files
 - [AWS SNS](http://aws.amazon.com/sns) (Simple Notification Service) is used to publish notifications for successful and failed loads. Users can subscribe to receive notifications by email.
-- [HP Vertica](http://www.vertica.com/), of course, provides the massively scalable, feature loaded, simply fast data analytics platform that we all know and love!
+- [Vertica](http://www.vertica.com/), of course, provides the massively scalable, feature loaded, simply fast data analytics platform that we all know and love!
 
 ![Loader Architecture](Architecture.png)
 
 ## Getting everything set up
 
-There are a few setup steps before you can get started loading files. Don't worry - it's not too hard, and you only need to do it once. Here are the steps. 
+There are a few setup tasks to be done before you start loading data. Don't worry - it's not too hard, and you only need to do the setup once. Here are the steps. 
 
 ### Step 1 - Prepare your Vertica Cluster(s)
 
-Do the following for each cluster you want to load. By the way, you will have lots of flexibility for how you later configure the mapping between source S3 locations/files and the target tables/clusters.  You can load the same sets of files to multiple clusters, or different sets of files to one cluster, or multiple sets of files to multiple clusters, or... well, you get the idea. 
+Do the following for each cluster you want to load.  
 
 #### Network access
-The AWS Lambda service running our loader function must be able to connect to your Vertica cluster over JDBC. In the future, per AWS, AWS Lambda will support presenting the service as though it was inside your own VPC, but for now your Vertica cluster must be reachable from any internet address. Your cluster access is likely set up this way by default, but if not, you must configure your VPC / ACLs / Security Groups accordingly.
+The AWS Lambda service running our loader function must be able to connect to your Vertica cluster over JDBC. In the future, AWS says, Lambda will behave as though it was inside your own VPC, but for now your Vertica cluster must be reachable on the server port (usually tcp/5433) from outside the VPC. 
 
 #### S3 bucket mounts
-Vertica needs access to the files in your S3 bucket(s), and so your bucket(s) must first be mounted to a path on the Vertica node's filesystem. 
-If you want to use the 'ON ANY NODE' load option to enable balanced parallel loading, then the bucket will need to be mounted to the same path *on all cluster nodes*.
+Vertica needs access to the files in your S3 bucket(s), and so your bucket(s) must first be mounted to a path on the Vertica node's filesystem. In fact, it should be mounted to the same path *on all cluster nodes*, so that you can use the 'ON ANY NODE' option to enable balanced parallel loading.
 
-If you are using [Vertica-On-Demand](http://www.vertica.com/hp-vertica-products/ondemand/) then follow the S3 mapping instructions in the [VOD Loading Guide](https://saas.hp.com/sites/default/files/resources/files/HP_Vertica_OnDemand_LoadingDataGuide.pdf#page=6). Your buckets will be mounted on each node to the path /VOD_<bucket>.  You can now skip to the next step.
+If you are using [Vertica-On-Demand](http://www.vertica.com/hp-vertica-products/ondemand/) then follow the S3 mapping instructions in the [VOD Loading Guide](https://saas.hp.com/sites/default/files/resources/files/HP_Vertica_OnDemand_LoadingDataGuide.pdf#page=6). Your buckets will be mounted on each node to the path /VOD_BUCKETNAME.  You can now skip to the next step.
 
 If you manage your own vertica cluster, then you will need to use s3fs to mount your S3 buckets.
 
