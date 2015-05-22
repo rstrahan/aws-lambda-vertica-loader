@@ -43,7 +43,7 @@ There are a few setup tasks to be done before you start loading data. Don't worr
 Do the following for each cluster you want to load.  
 
 #### Network access
-The AWS Lambda service running our loader function must be able to connect to your Vertica cluster over JDBC. In the future, AWS says, Lambda will behave as though it was inside your own VPC, but for now your Vertica cluster must be reachable on the server port (usually tcp/5433) from outside the VPC. 
+The AWS Lambda service running our loader function must be able to connect to your Vertica cluster over JDBC. AWS says that in the future Lambda will behave as though it is inside your VPC, but for now your Vertica cluster must be reachable on the server port (usually tcp/5433) from outside the VPC. 
 
 #### S3 bucket mounts
 Vertica needs access to the files in your S3 bucket(s), and so your bucket(s) must first be mounted to a path on the Vertica node's filesystem. In fact, it should be mounted to the same path *on all cluster nodes*, so that you can use the 'ON ANY NODE' option to enable balanced parallel loading.
