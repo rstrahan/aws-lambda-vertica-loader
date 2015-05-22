@@ -46,7 +46,7 @@ Do the following for each cluster you want to load.
 The AWS Lambda service running our loader function must be able to connect to your Vertica cluster over JDBC. AWS says that in the future Lambda will behave as though it is inside your VPC, but for now your Vertica cluster must be reachable on the server port (usually tcp/5433) from outside the VPC. 
 
 #### S3 bucket mounts
-Vertica needs access to the files in your S3 bucket(s), and so your bucket(s) must first be mounted to a path on the Vertica node's filesystem. In fact, it should be mounted to the same path *on all cluster nodes*, so that you can use the 'ON ANY NODE' option to enable balanced parallel loading.
+Vertica needs access to the files in your S3 bucket(s), and so your bucket(s) must first be mounted to a path on the Vertica node's filesystem. In fact, they should be mounted to the same paths *on all cluster nodes*, so that you can use the 'ON ANY NODE' option to enable balanced parallel loading.
 
 If you are using [Vertica-On-Demand](http://www.vertica.com/hp-vertica-products/ondemand/) then follow the S3 mapping instructions in the [VOD Loading Guide](https://saas.hp.com/sites/default/files/resources/files/HP_Vertica_OnDemand_LoadingDataGuide.pdf#page=6). Your buckets will be mounted on each node to the path /VOD_BUCKETNAME.  You can skip to the next section.
 
