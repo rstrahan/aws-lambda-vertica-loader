@@ -1,7 +1,7 @@
 # Automatic Vertica Database Loader for AWS S3
 
 Are you using Amazon Web Services for your Vertica cluster(s)? Are you staging your source data files on AWS S3 storage?
-If so, this AWS S3 loader for Vertica may be just the thing for you! It will automatically load files as they are dropped into S3, to target tables in one or more Vertica clusters. 
+If so, this AWS S3 loader for Vertica may be just the thing for you! It will automatically pick up files as they are dropped into S3, and load them into target tables in one or more Vertica clusters. 
 
 Here are some of the things it can do:
 - Pick up source files based on S3 bucket/prefix and filename regex pattern
