@@ -10,7 +10,11 @@
 
 /*
  * May 2015
- * Derivative created by HP, to leverage and extend the function framework to provide automatic loading from S3, via Lambda, to the HP Vertica Analytic Database platform.
+ *
+ * Derivative created by HP, to leverage and extend the function framework to provide automatic loading from S3, via
+ * Lambda, to the HP Vertica Analytic Database platform. This derivative work remains governed by the Amazon
+ * Software License, and is subject to all terms and restrictions noted in ASL.
+ *
  */
 
 

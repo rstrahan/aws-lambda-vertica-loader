@@ -8,6 +8,16 @@
     or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, express or implied. See the License for the specific language governing permissions and limitations under the License. 
 */
 
+/*
+ * May 2015
+ *
+ * Derivative created by HP, to leverage and extend the function framework to provide automatic loading from S3, via
+ * Lambda, to the HP Vertica Analytic Database platform. This derivative work remains governed by the Amazon
+ * Software License, and is subject to all terms and restrictions noted in ASL.
+ *
+ */
+
+
 var lambda = require('./index');
 
 event = {
