@@ -57,6 +57,6 @@
     ],
     "repository": {
         "type": "git",
-        "url": "http://github.com/awslabs/aws-lambda-vertica-loader"
+        "url": "http://github.com/vertica/aws-lambda-vertica-loader"
     }
 }
